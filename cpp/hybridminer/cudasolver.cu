@@ -93,7 +93,7 @@ void CUDASolver::setAddress( std::string const& addr )
 
 void CUDASolver::setChallenge( std::string const& chal )
 {
-  std::cout << "Setting cuda chal " << std::endl;
+  //std::cout << "Setting cuda chal " << std::endl;
 
   s_challenge = chal;
 
