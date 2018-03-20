@@ -1,6 +1,10 @@
 {
   "name": "0xbitcoin-miner",
   "version": "2.9.0-pre2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/azlehria/0xbitcoin-gpuminer.git"
+  },
   "engines": {
     "node": ">=8.9"
   },
@@ -8,7 +12,7 @@
   "main": "index.js",
   "scripts": {
     "build": "node-gyp rebuild --target=v8.9.4",
-    "package": "pkg index.js ",
+    "package": "pkg index.js",
     "test": "./node_modules/mocha/bin/mocha"
   },
   "author": "",

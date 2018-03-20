@@ -60,7 +60,7 @@ namespace miner
         New<v8::String>( hybridminer->solution() ).ToLocalChecked()
       };
 
-      callback->Call( 2, argv );
+      callback->Call( 2, argv, async_resource );
     }
   };
 
