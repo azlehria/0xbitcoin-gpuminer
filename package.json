@@ -11,7 +11,7 @@
   "description": "Find hashes, get money.",
   "main": "index.js",
   "scripts": {
-    "build": "node-gyp rebuild --target=v8.9.4",
+    "build": "node-gyp rebuild",
     "package": "pkg index.js",
     "test": "./node_modules/mocha/bin/mocha"
   },
