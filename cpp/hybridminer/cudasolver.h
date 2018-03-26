@@ -20,7 +20,7 @@ public:
 
   void setAddress( std::string const& addr );
   void setChallenge( std::string const& chal );
-  void setDifficulty( uint32_t const& diff );
+  void setDifficulty( uint64_t const& diff );
   void setTarget( std::string const& target );
 
   void init();
