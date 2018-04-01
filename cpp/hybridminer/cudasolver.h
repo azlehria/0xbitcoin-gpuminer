@@ -41,7 +41,7 @@ public:
 private:
   //void updateBuffer();
 
-  void updateGPULoop();
+  void updateGPULoop( bool force_update = false );
   // Implement this for verification or pass to CPUSolver somehow?
   void hash( bytes_t const& solution, bytes_t& digest );
 

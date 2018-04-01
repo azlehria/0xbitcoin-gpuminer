@@ -26,12 +26,11 @@
             {'rule_name': 'cuda on windows',
              'message': "compile cuda file on windows",
              'process_outputs_as_sources': 0,
-             'action': ['nvcc -cudart static --machine 64\
-                  -c <(_inputs) -o <(_outputs)',
-                  '-gencode=arch=compute_61,code=sm_61',
-                  '-gencode=arch=compute_52,code=sm_52',
-                  '-gencode=arch=compute_35,code=sm_35',
-                  '-I', 'cpp/hybridminer']
+             'action': ['nvcc -c <(_inputs) -o <(_outputs)\
+                  -cudart static -m64 -use_fast_math -O3',
+                  '-gencode=arch=compute_61,code=\\\"sm_61,compute_61\\\"',
+                  '-gencode=arch=compute_52,code=\\\"sm_52,compute_52\\\"',
+                  '-gencode=arch=compute_35,code=\\\"sm_35,compute_35\\\"']
             }, 
             {'rule_name': 'cuda on linux',
              'message': "compile cuda file on linux",

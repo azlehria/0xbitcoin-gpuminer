@@ -193,7 +193,12 @@ module.exports = {
 
         var self = this;
 
-        const verifyAndSubmit = (solution_number) => {
+        const printSolutionCount = async(solutionString) => {
+            process.stdout.write("\x1b[s\x1b[?25l\x1b[3;22f\x1b[38;5;221m" + solutionString +
+                                     "\x1b[0m\x1b[u\x1b[?25h");
+        }
+
+        const verifyAndSubmit = async(solution_number) => {
             if(web3utils.toBN(solution_number).eq(0)) { return; }
             const challenge_number = miningParameters.challengeNumber;
             const digest = web3utils.soliditySha3(challenge_number,
@@ -204,10 +209,9 @@ module.exports = {
                 solutionsSubmitted++;
 //                miningLogger.print("Submitting solution #" + solutionsSubmitted);
                 //  self.submitNewMinedBlock(minerEthAddress, solution_number, digest, challenge_number);
-                process.stdout.write("\x1b[s\x1b[?25l\x1b[3;22f\x1b[38;5;221m" + solutionsSubmitted.toString().padStart(8) +
-                                     "\x1b[0m\x1b[u\x1b[?25h");
-                return self.submitNewMinedBlock(addressFrom, minerEthAddress, solution_number,
-                                                digest, challenge_number, target, difficulty)
+                self.submitNewMinedBlock(addressFrom, minerEthAddress, solution_number,
+                                         digest, challenge_number, target, difficulty)
+                printSolutionCount(solutionsSubmitted.toString().padStart(8));
             //} else {
             //    console.error("Verification failed!\n",
             //                  "challenge:", challenge_number, "\n",
@@ -222,8 +226,8 @@ module.exports = {
 
         debugLogger.log('MINING:', self.mining)
 
-        CPPMiner.stop();
-        CPPMiner.run((err, sol) => {
+//        CPPMiner.stop();
+        CPPMiner.run(async(err, sol) => {
             if (sol) {
                 try {
                     verifyAndSubmit(sol);
