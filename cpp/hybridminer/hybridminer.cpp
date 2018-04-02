@@ -172,3 +172,8 @@ std::string HybridMiner::solution() const
 {
   return m_bSolutionFound ? ( "0x" + CPUSolver::bytesToString( m_solution ) ) : std::string();
 }
+
+std::string HybridMiner::getSolution()
+{
+  return CUDASolver::getSolution();
+}

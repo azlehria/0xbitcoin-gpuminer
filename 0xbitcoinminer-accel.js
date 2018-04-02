@@ -162,6 +162,7 @@ module.exports = {
 //            miningLogger.print("Restarting mining operations");
 
             try {
+                // C++ module entry point
                 this.mineStuff(miningParameters);
             } catch (e) {
                 miningLogger.print(e)
@@ -170,7 +171,7 @@ module.exports = {
     },
 
     //async submitNewMinedBlock(addressFrom, solution_number, digest_bytes, challenge_number)
-    async submitNewMinedBlock(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty) {
+    submitNewMinedBlock(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty) {
         //this.miningLogger.appendToStandardLog("Giving mined solution to network interface " + challenge_number);
 
         this.networkInterface.queueMiningSolution(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty)
@@ -198,8 +199,9 @@ module.exports = {
                                      "\x1b[0m\x1b[u\x1b[?25h");
         }
 
-        const verifyAndSubmit = async(solution_number) => {
-            if(web3utils.toBN(solution_number).eq(0)) { return; }
+        const verifyAndSubmit = () => {
+            var solution_number = "0x" + CPPMiner.getSolution();
+            if(solution_number == "0x" || web3utils.toBN(solution_number).eq(0)) { return; }
             const challenge_number = miningParameters.challengeNumber;
             const digest = web3utils.soliditySha3(challenge_number,
                                                   addressFrom,
@@ -222,12 +224,14 @@ module.exports = {
             }
         }
 
+        setInterval(() => { verifyAndSubmit() }, 500);
+
         self.mining = true;
 
         debugLogger.log('MINING:', self.mining)
 
 //        CPPMiner.stop();
-        CPPMiner.run(async(err, sol) => {
+        CPPMiner.run((err, sol) => {
             if (sol) {
                 try {
                     verifyAndSubmit(sol);

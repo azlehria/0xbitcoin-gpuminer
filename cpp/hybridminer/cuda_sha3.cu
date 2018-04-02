@@ -82,14 +82,14 @@ __device__ __constant__ const uint64_t RC[24] = {
 };
 
 __device__ __forceinline__
-uint64_t bswap_64( uint64_t x )
+uint64_t bswap_64( uint64_t const x )
 {
     return ((uint64_t)(__byte_perm((uint32_t) x, 0, 0x0123)) << 32)
            ^ __byte_perm((uint32_t)(x >> 32), 0, 0x0123);
 }
 
 __device__ __forceinline__
-uint64_t xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e )
+uint64_t xor5( uint64_t const a, uint64_t const b, uint64_t const c, uint64_t const d, uint64_t const e )
 {
   uint64_t output;
   asm( "xor.b64 %0, %1, %2;" : "=l"(output) : "l"(d) ,"l"(e) );
@@ -100,7 +100,7 @@ uint64_t xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e )
 }
 
 __device__ __forceinline__
-uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
+uint64_t chi( uint64_t const a, uint64_t const b, uint64_t const c )
 {
 #if __CUDA_ARCH__ >= 500 && CUDA_VERSION >= 7050
   uint64_t output = 0;
@@ -113,7 +113,7 @@ uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
 }
 
 __device__
-bool keccak( uint64_t nounce )
+bool keccak( uint64_t const nounce )
 {
   uint64_t state[25], C[5], D[5];
 
@@ -142,7 +142,7 @@ bool keccak( uint64_t nounce )
   //     for i = 0 to 5
   //         state[j + 1] ^= (~C[(i + 1) % 5]) & C[(i + 2) % 5];
   state[ 0] = chi( d_mid[ 0], d_mid[ 1], state[ 2] );
-  state[0] ^= RC[0];
+  state[ 0] = state[0] ^ RC[0];
   state[ 1] = chi( d_mid[ 1], state[ 2], d_mid[ 3] );
   state[ 2] = chi( state[ 2], d_mid[ 3], state[ 4] );
   state[ 3] = chi( d_mid[ 3], state[ 4], d_mid[ 0] );
@@ -288,7 +288,7 @@ bool keccak( uint64_t nounce )
     C[0] = state[ 0];
     C[1] = state[ 1];
     state[ 0] = chi( state[ 0], state[1], state[2] );
-    state[0] ^= RC[i];
+    state[ 0] = state[0] ^ RC[i];
     state[ 1] = chi( state[ 1], state[2], state[3] );
     state[ 2] = chi( state[ 2], state[3], state[4] );
     state[ 3] = chi( state[ 3], state[4], C[0] );
@@ -352,7 +352,7 @@ __global__ __launch_bounds__( TPB52, 1 )
 #else
 __global__ __launch_bounds__( TPB50, 2 )
 #endif
-void gpu_mine( uint64_t* solution, int32_t* done, uint64_t cnt, uint32_t threads )
+void gpu_mine( uint64_t* solution, int32_t* done, uint64_t const cnt, uint32_t const threads )
 {
   uint64_t thread = blockDim.x * blockIdx.x + threadIdx.x;
   uint64_t nounce = cnt + thread;
@@ -399,8 +399,10 @@ uint64_t getHashCount()
 __host__
 void resetHashCount()
 {
-  cnt = 0;
-  //printable_hashrate_cnt = 0;
+  printable_hashrate_cnt = 0;
+  print_counter = 0;
+
+  ftime( &start );
 }
 
 __host__
@@ -457,7 +459,7 @@ void gpu_init()
 {
   cudaDeviceProp device_prop;
   int32_t device_count;
-  
+
   srand((time(NULL) & 0xFFFF) | (getpid() << 16));
 
   char config[10];
@@ -536,6 +538,8 @@ void gpu_cleanup()
   cudaFree( d_done );
   cudaFree( d_solution );
   cudaFreeHost( h_message );
+
+  cudaDeviceReset();
 }
 
 __host__

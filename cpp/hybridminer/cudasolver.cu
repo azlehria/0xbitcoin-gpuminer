@@ -1,14 +1,14 @@
-#include <assert.h>
+#include <cassert>
 #include <sstream>
 #include <iomanip>
 #include <iostream>
-#include <string.h>
+#include <cstring>
 #include "cudasolver.h"
 #include "sha3.h"
 
 //we will need this!
 #include "cuda_sha3.cu"
- 
+
 static const char* const ascii[] = {
   "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
   "10","11","12","13","14","15","16","17","18","19","1a","1b","1c","1d","1e","1f",
@@ -64,19 +64,14 @@ static void HexToBytes( std::string const& hex, uint8_t bytes[] )
 
 // static
 std::atomic<uint32_t> CUDASolver::hashes( 0u ); // statistics only
+std::mutex CUDASolver::m_solutions_mutex;
+std::queue<std::string> CUDASolver::m_solutions_queue;
 
 CUDASolver::CUDASolver() noexcept :
 m_address( ADDRESS_LENGTH ),
 m_challenge( UINT256_LENGTH ),
-m_target( UINT256_LENGTH ),
-m_target_tmp( UINT256_LENGTH ),
-m_buffer( ADDRESS_LENGTH + 2 * UINT256_LENGTH ),
-m_buffer_tmp( ADDRESS_LENGTH + 2 * UINT256_LENGTH ), //this has something to do with updateBuffer
-m_diff( 0 ),
-m_diff_tmp( 0 ),
-m_buffer_ready( false ),
+m_target( 0 ),
 m_target_ready( false ),
-m_diff_ready( false ),
 m_updated_gpu_inputs( false )
 {
 }
@@ -114,23 +109,8 @@ void CUDASolver::setTarget( std::string const& target )
 
   s_target = t + target.substr(2);
 
-  m_diff = std::stoull( (s_target).substr( 0, 16 ), nullptr, 16 );
-
-  // Double-buffer system, the trySolution() function will be blocked
-  //  only when a change occurs.
-  // {
-  //   std::lock_guard<std::mutex> g( m_diff_mutex );
-  //   m_diff_tmp = diff );
-  // }
-  m_diff_ready = true;
-
-  // Double-buffer system, the trySolution() function will be blocked
-  //  only when a change occurs.
-  // {
-  //   std::lock_guard<std::mutex> g( m_target_mutex );
-  //   hexToBytes( "0x" + t + target.substr( 2 ), m_target_tmp );
-  // }
-  // m_target_ready = true;
+  m_target = std::stoull( (s_target).substr( 0, 16 ), nullptr, 16 );
+  m_target_ready = true;
 
   m_updated_gpu_inputs = true;
   updateGPULoop();
@@ -148,8 +128,7 @@ void CUDASolver::updateGPULoop( bool force_update )
       ( m_updated_gpu_inputs
         && m_target_ready
         && m_challenge.size() > 0
-        && m_address.size() > 0
-        && m_diff_ready ) )
+        && m_address.size() > 0 ) )
   {
     m_updated_gpu_inputs = false;
 
@@ -163,9 +142,9 @@ void CUDASolver::updateGPULoop( bool force_update )
       hash_prefix[i + 32] = (uint8_t)m_address[i];
     }
 
-    uint64_t diff = m_diff;
+    uint64_t target = m_target;
 
-    update_mining_inputs( diff, hash_prefix );
+    update_mining_inputs( target, hash_prefix );
     // stop_solving();
   }
 }
@@ -207,7 +186,18 @@ CUDASolver::bytes_t CUDASolver::findSolution()
   do
   {
     find_message();
-  } while( !h_done[0] );
+
+
+    if( h_done[0] > 0 )
+    {
+      for( int32_t i = 0; i < 32; i++ )
+      {
+        byte_solution[i] = solution[i];
+      }
+      CUDASolver::pushSolution( bytesToString( byte_solution ) );
+      resetHashCount();
+    }
+  } while( h_done[0] >= 0 );
 
   if( h_done[0] > 0 )
   {
@@ -215,6 +205,7 @@ CUDASolver::bytes_t CUDASolver::findSolution()
     {
       byte_solution[i] = solution[i];
     }
+    CUDASolver::pushSolution( bytesToString( byte_solution ) );
   }
   else
   {
@@ -257,46 +248,24 @@ std::string CUDASolver::bytesToString( bytes_t const& buffer )
   return output;
 }
 
-// static
-bool CUDASolver::lte( bytes_t const& left, bytes_t const& right )
+//static
+std::string CUDASolver::getSolution()
 {
-  assert( left.size() == right.size() );
+  if( m_solutions_queue.empty() )
+    return "";
 
-  for( unsigned i = 0; i < left.size(); ++i )
-  {
-    if( left[i] == right[i] )
-      continue;
-    if( left[i] > right[i] )
-      return false;
-    return true;
-  }
-  return true;
+  std::string ret;
+  m_solutions_mutex.lock();
+  ret = m_solutions_queue.front();
+  m_solutions_queue.pop();
+  m_solutions_mutex.unlock();
+  return ret;
 }
 
-void CUDASolver::hash( bytes_t const& solution, bytes_t& digest )
+//static
+void CUDASolver::pushSolution( std::string sol )
 {
-  if( m_buffer_ready )
-  {
-    std::lock_guard<std::mutex> g( m_buffer_mutex );
-    m_buffer.swap( m_buffer_tmp );
-    m_buffer_ready = false;
-  }
-
-  std::copy( solution.cbegin(), solution.cend(), m_buffer.begin() + m_challenge.size() + m_address.size() );
-  keccak_256( &digest[0], digest.size(), &m_buffer[0], m_buffer.size() );
-}
-
-bool CUDASolver::trySolution( bytes_t const& solution )
-{
-  bytes_t digest( UINT256_LENGTH );
-  hash( solution, digest );
-
-  if( m_target_ready )
-  {
-    std::lock_guard<std::mutex> g( m_target_mutex );
-    m_target.swap( m_target_tmp );
-    m_target_ready = false;
-  }
-
-  return lte( digest, m_target );
+  m_solutions_mutex.lock();
+  m_solutions_queue.push( sol );
+  m_solutions_mutex.unlock();
 }

@@ -16,6 +16,7 @@ class HybridMiner
 {
 public:
   std::string solution() const;
+  std::string getSolution();
 
   HybridMiner() noexcept;
   ~HybridMiner();

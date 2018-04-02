@@ -128,6 +128,11 @@ namespace miner
     info.GetReturnValue().Set( value );
   }
 
+  NAN_METHOD( getSolution )
+  {
+    info.GetReturnValue().Set( New<v8::String>( hybridminer->getSolution().c_str() ).ToLocalChecked() );
+  }
+
   // Defines the functions our add-on will export
   NAN_MODULE_INIT( Init )
   {
@@ -162,6 +167,11 @@ namespace miner
     Set( target
          , New<v8::String>( "hashes" ).ToLocalChecked()
          , New<v8::FunctionTemplate>( hashes )->GetFunction()
+    );
+
+    Set( target
+         , New<v8::String>( "getSolution" ).ToLocalChecked()
+         , New<v8::FunctionTemplate>( getSolution )->GetFunction()
     );
 
     hybridminer = new HybridMiner;
