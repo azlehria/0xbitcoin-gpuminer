@@ -30,16 +30,16 @@
                   -cudart static -m64 -use_fast_math -O3',
                   '-gencode=arch=compute_61,code=\\\"sm_61,compute_61\\\"',
                   '-gencode=arch=compute_52,code=\\\"sm_52,compute_52\\\"',
-                  '-gencode=arch=compute_35,code=\\\"sm_35,compute_35\\\"']
+                  '-gencode=arch=compute_30,code=\\\"sm_30,compute_30\\\"']
             }, 
             {'rule_name': 'cuda on linux',
              'message': "compile cuda file on linux",
              'process_outputs_as_sources': 1,
-             'action': ['nvcc','-std=c++11','-Xcompiler','-fpic',
-                  '-cudart static','-c','<@(_inputs)','-o','<@(_outputs)',
-                  '-gencode=arch=compute_61,code=\\\"sm_61,compute_61\\\"',
-                  '-gencode=arch=compute_52,code=\\\"sm_52,compute_52\\\"',
-                  '-gencode=arch=compute_35,code=\\\"sm_35,compute_35\\\"']
+             'action': ['nvcc','-std=c++11','-m64','-Xcompiler "-fpic"',
+                  '-c','<@(_inputs)','-o','<@(_outputs)',
+                  '-gencode=arch=compute_61,code=\"sm_61,compute_61\"',
+                  '-gencode=arch=compute_52,code=\"sm_52,compute_52\"',
+                  '-gencode=arch=compute_30,code=\"sm_30,compute_30\"']
             }
           ]
         ]
