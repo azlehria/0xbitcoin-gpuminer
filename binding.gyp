@@ -35,7 +35,7 @@
             {'rule_name': 'cuda on linux',
              'message': "compile cuda file on linux",
              'process_outputs_as_sources': 1,
-             'action': ['nvcc','-std=c++11','-m64','-Xcompiler "-fpic"',
+             'action': ['nvcc','-std=c++11','-m64','-Xcompiler=\"-fpic\"',
                   '-c','<@(_inputs)','-o','<@(_outputs)',
                   '-gencode=arch=compute_61,code=\"sm_61,compute_61\"',
                   '-gencode=arch=compute_52,code=\"sm_52,compute_52\"',
