@@ -83,20 +83,9 @@ void HybridMiner::run()
 {
   if( strcmp( m_hardwareType.c_str(), "cuda" ) == 0 )
   {
-    // std::cout << "--Starting mining loop using CUDA-- " << std::endl;
-
-    m_bSolutionFound = false;
-
-    CUDASolver::bytes_t solutionBytes( CUDASolver::UINT256_LENGTH );
-
-    //this is core dumping - maybe when you dont have a GPU?
     cudaSolver.init();
 
-    solutionBytes = cudaSolver.findSolution();
-    // std::cout << "--GPU returned a soln ! -- " << std::endl;
-
-    //This sets m_solution and m_bSolutionFound
-    solutionFound( solutionBytes );
+    cudaSolver.findSolution();
   }
   else
   {

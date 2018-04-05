@@ -176,12 +176,12 @@ void CUDASolver::stopFinding()
   stop_solving();
 }
 
-CUDASolver::bytes_t CUDASolver::findSolution()
+void CUDASolver::findSolution()
 {
   updateGPULoop( true );
 
   CUDASolver::bytes_t byte_solution( 32 );
-  h_done[0] = 0;
+  resetHashCount();
 
   do
   {
@@ -198,25 +198,6 @@ CUDASolver::bytes_t CUDASolver::findSolution()
       resetHashCount();
     }
   } while( h_done[0] >= 0 );
-
-  if( h_done[0] > 0 )
-  {
-    for( int32_t i = 0; i < 32; i++ )
-    {
-      byte_solution[i] = solution[i];
-    }
-    CUDASolver::pushSolution( bytesToString( byte_solution ) );
-  }
-  else
-  {
-    gpu_cleanup();
-    for( int32_t i = 0; i < 32; i++ )
-    {
-      byte_solution[i] = 0;
-    }
-  }
-
-  return byte_solution;
 }
 
 std::string CUDASolver::hexStr( char* data, int32_t len )

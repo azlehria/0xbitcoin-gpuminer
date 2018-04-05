@@ -82,30 +82,34 @@ __device__ __constant__ const uint64_t RC[24] = {
 };
 
 __device__ __forceinline__
-uint64_t bswap_64( uint64_t const x )
+uint64_t bswap_64( uint64_t x )
 {
-    return ((uint64_t)(__byte_perm((uint32_t) x, 0, 0x0123)) << 32)
-           ^ __byte_perm((uint32_t)(x >> 32), 0, 0x0123);
+  return ((uint64_t)(__byte_perm((uint32_t) x, 0, 0x0123)) << 32)
+    ^ __byte_perm((uint32_t)(x >> 32), 0, 0x0123);
 }
 
 __device__ __forceinline__
-uint64_t xor5( uint64_t const a, uint64_t const b, uint64_t const c, uint64_t const d, uint64_t const e )
+uint64_t xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e )
 {
-  uint64_t output;
-  asm( "xor.b64 %0, %1, %2;" : "=l"(output) : "l"(d) ,"l"(e) );
-  asm( "xor.b64 %0, %0, %1;" : "+l"(output) : "l"(c) );
-  asm( "xor.b64 %0, %0, %1;" : "+l"(output) : "l"(b) );
-  asm( "xor.b64 %0, %0, %1;" : "+l"(output) : "l"(a) );
+  uint64_t output = 0;
+  asm( "{"
+       "  xor.b64 %0, %1, %2;"
+       "  xor.b64 %0, %0, %3;"
+       "  xor.b64 %0, %0, %4;"
+       "  xor.b64 %0, %0, %5;"
+       "}" : "+l"(output) : "l"(a), "l"(b), "l"(c), "l"(d), "l"(e) );
   return output;
 }
 
 __device__ __forceinline__
-uint64_t chi( uint64_t const a, uint64_t const b, uint64_t const c )
+uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
 {
 #if __CUDA_ARCH__ >= 500 && CUDA_VERSION >= 7050
   uint64_t output = 0;
-  asm ("lop3.b32 %0, %1, %2, %3, 0xD2;" : "=r"((uint2*)&output.x) : "r"((uint2*)&a.x), "r"((uint2*)&b.x),"r"((uint2*)&c.x));
-  asm ("lop3.b32 %0, %1, %2, %3, 0xD2;" : "=r"((uint2*)&output.y) : "r"((uint2*)&a.y), "r"((uint2*)&b.y),"r"((uint2*)&c.y));
+  asm( "{"
+       "  lop3.b32 [&output], [&a], [&b], [&c], 0xD2;"
+       "  lop3.b32 [&output+4], [&a+4], [&b+4], [&c+4], 0xD2;"
+       "}" );
   return output;
 #else
   return a ^ ((~b) & c);
@@ -121,26 +125,6 @@ bool keccak( uint64_t const nounce )
 
   state[ 2] = d_mid[ 2] ^ ROTL64(nounce, 44);
   state[ 4] = d_mid[ 4] ^ ROTL64(nounce, 14);
-
-  state[ 6] = d_mid[ 6] ^ ROTL64(nounce, 20);
-  state[ 9] = d_mid[ 9] ^ ROTL64(nounce, 62);
-
-  state[11] = d_mid[11] ^ ROTL64(nounce, 7);
-  state[13] = d_mid[13] ^ ROTL64(nounce, 8);
-
-  state[15] = d_mid[15] ^ ROTL64(nounce, 27);
-  state[18] = d_mid[18] ^ ROTL64(nounce, 16);
-
-  state[20] = d_mid[20] ^ ROTL64(nounce, 63);
-  state[21] = d_mid[21] ^ ROTL64(nounce, 55);
-  state[22] = d_mid[22] ^ ROTL64(nounce, 39);
-
-  //  Chi
-  // for j = 0 to 25, j += 5
-  //     for i = 0 to 5
-  //         C[i] = state[j + i];
-  //     for i = 0 to 5
-  //         state[j + 1] ^= (~C[(i + 1) % 5]) & C[(i + 2) % 5];
   state[ 0] = chi( d_mid[ 0], d_mid[ 1], state[ 2] );
   state[ 0] = state[0] ^ RC[0];
   state[ 1] = chi( d_mid[ 1], state[ 2], d_mid[ 3] );
@@ -148,36 +132,38 @@ bool keccak( uint64_t const nounce )
   state[ 3] = chi( d_mid[ 3], state[ 4], d_mid[ 0] );
   state[ 4] = chi( state[ 4], d_mid[ 0], d_mid[ 1] );
 
-  C[0] = state[ 6];
+  C[0] = d_mid[ 6] ^ ROTL64(nounce, 20);
+  state[ 9] = d_mid[ 9] ^ ROTL64(nounce, 62);
   state[ 5] = chi( d_mid[ 5], C[ 0], d_mid[7] );
   state[ 6] = chi( C[ 0], d_mid[ 7], d_mid[8] );
   state[ 7] = chi( d_mid[ 7], d_mid[ 8], state[9] );
   state[ 8] = chi( d_mid[ 8], state[ 9], d_mid[5] );
   state[ 9] = chi( state[ 9], d_mid[ 5], C[0] );
 
-  C[0] = state[11];
+  C[0] = d_mid[11] ^ ROTL64(nounce, 7);
+  state[13] = d_mid[13] ^ ROTL64(nounce, 8);
   state[10] = chi( d_mid[10], C[0], d_mid[12] );
   state[11] = chi( C[0], d_mid[12], state[13] );
   state[12] = chi( d_mid[12], state[13], d_mid[14] );
   state[13] = chi( state[13], d_mid[14], d_mid[10] );
   state[14] = chi( d_mid[14], d_mid[10], C[0] );
 
-  C[0] = state[15];
+  C[0] = d_mid[15] ^ ROTL64(nounce, 27);
+  state[18] = d_mid[18] ^ ROTL64(nounce, 16);
   state[15] = chi( C[0], d_mid[16], d_mid[17] );
   state[16] = chi( d_mid[16], d_mid[17], state[18] );
   state[17] = chi( d_mid[17], state[18], d_mid[19] );
   state[18] = chi( state[18], d_mid[19], C[0] );
   state[19] = chi( d_mid[19], C[0], d_mid[16] );
 
-  C[0] = state[20];
-  C[1] = state[21];
+  C[0] = d_mid[20] ^ ROTL64(nounce, 63);
+  C[1] = d_mid[21] ^ ROTL64(nounce, 55);
+  state[22] = d_mid[22] ^ ROTL64(nounce, 39);
   state[20] = chi( C[0], C[1], state[22] );
   state[21] = chi( C[1], state[22], d_mid[23] );
   state[22] = chi( state[22], d_mid[23], d_mid[24] );
   state[23] = chi( d_mid[23], d_mid[24], C[0] );
   state[24] = chi( d_mid[24], C[0], C[1] );
-
-  //  Iota
 
 #if __CUDA_ARCH__ >= 600
 #pragma unroll 22
@@ -203,48 +189,51 @@ bool keccak( uint64_t const nounce )
     D[3] = ROTL64(C[4], 1) ^ C[2];
     D[4] = ROTL64(C[0], 1) ^ C[3];
 
-    for (x = 0; x < 5; x++) {
-      state[x]      ^= D[x];
-      state[x + 5]  ^= D[x];
-      state[x + 10] ^= D[x];
-      state[x + 15] ^= D[x];
-      state[x + 20] ^= D[x];
+    for (x = 0; x < 5; ++x)
+    {
+      // As of 9.1, compiler still isn't smart enough to realize `a ^= b` == `a = a ^ b`
+      // The latter form is fractionally faster
+      state[x]      = state[x]      ^ D[x];
+      state[x +  5] = state[x +  5] ^ D[x];
+      state[x + 10] = state[x + 10] ^ D[x];
+      state[x + 15] = state[x + 15] ^ D[x];
+      state[x + 20] = state[x + 20] ^ D[x];
     }
 #else
     D[0] = ROTL64(C[1], 1) ^ C[4];
-    state[ 0] ^= D[0];
-    state[ 5] ^= D[0];
-    state[10] ^= D[0];
-    state[15] ^= D[0];
-    state[20] ^= D[0];
+    state[ 0] = state[ 0] ^ D[0];
+    state[ 5] = state[ 5] ^ D[0];
+    state[10] = state[10] ^ D[0];
+    state[15] = state[15] ^ D[0];
+    state[20] = state[20] ^ D[0];
 
     D[0] = ROTL64(C[2], 1) ^ C[0];
-    state[ 1] ^= D[0];
-    state[ 6] ^= D[0];
-    state[11] ^= D[0];
-    state[16] ^= D[0];
-    state[21] ^= D[0];
+    state[ 1] = state[ 1] ^ D[0];
+    state[ 6] = state[ 6] ^ D[0];
+    state[11] = state[11] ^ D[0];
+    state[16] = state[16] ^ D[0];
+    state[21] = state[21] ^ D[0];
 
     D[0] = ROTL64(C[3], 1) ^ C[1];
-    state[ 2] ^= D[0];
-    state[ 7] ^= D[0];
-    state[12] ^= D[0];
-    state[17] ^= D[0];
-    state[22] ^= D[0];
+    state[ 2] = state[ 2] ^ D[0];
+    state[ 7] = state[ 7] ^ D[0];
+    state[12] = state[12] ^ D[0];
+    state[17] = state[17] ^ D[0];
+    state[22] = state[22] ^ D[0];
 
     D[0] = ROTL64(C[4], 1) ^ C[2];
-    state[ 3] ^= D[0];
-    state[ 8] ^= D[0];
-    state[13] ^= D[0];
-    state[18] ^= D[0];
-    state[23] ^= D[0];
+    state[ 3] = state[ 3] ^ D[0];
+    state[ 8] = state[ 8] ^ D[0];
+    state[13] = state[13] ^ D[0];
+    state[18] = state[18] ^ D[0];
+    state[23] = state[23] ^ D[0];
 
     D[0] = ROTL64(C[0], 1) ^ C[3];
-    state[ 4] ^= D[0];
-    state[ 9] ^= D[0];
-    state[14] ^= D[0];
-    state[19] ^= D[0];
-    state[24] ^= D[0];
+    state[ 4] = state[ 4] ^ D[0];
+    state[ 9] = state[ 9] ^ D[0];
+    state[14] = state[14] ^ D[0];
+    state[19] = state[19] ^ D[0];
+    state[24] = state[24] ^ D[0];
 #endif
 
     // Rho Pi
@@ -287,8 +276,7 @@ bool keccak( uint64_t const nounce )
     //         state[j + 1] ^= (~C[(i + 1) % 5]) & C[(i + 2) % 5];
     C[0] = state[ 0];
     C[1] = state[ 1];
-    state[ 0] = chi( state[ 0], state[1], state[2] );
-    state[ 0] = state[0] ^ RC[i];
+    state[ 0] = chi( state[ 0], state[1], state[2] ) ^ RC[i];
     state[ 1] = chi( state[ 1], state[2], state[3] );
     state[ 2] = chi( state[ 2], state[3], state[4] );
     state[ 3] = chi( state[ 3], state[4], C[0] );
@@ -325,25 +313,18 @@ bool keccak( uint64_t const nounce )
     state[22] = chi( state[22], state[23], state[24] );
     state[23] = chi( state[23], state[24], C[0] );
     state[24] = chi( state[24], C[0], C[1] );
-
-    //  Iota
   }
-  for (x = 0; x < 5; x++) {
+
+  for (x = 0; x < 5; ++x)
+  {
     C[x] = xor5( state[x], state[x + 5], state[x + 10], state[x + 15], state[x + 20] );
   }
 
-  state[ 0] ^= ROTL64(C[1], 1) ^ C[4];
-  state[ 6] ^= ROTL64(C[2], 1) ^ C[0];
-  state[12] ^= ROTL64(C[3], 1) ^ C[1];
+  state[ 0] = state[ 0] ^ ROTL64(C[1], 1) ^ C[4];
+  state[ 6] = state[ 6] ^ ROTL64(C[2], 1) ^ C[0];
+  state[12] = state[12] ^ ROTL64(C[3], 1) ^ C[1];
 
-  state[ 1] = ROTL64( state[ 6], 44 );
-  state[ 2] = ROTL64( state[12], 43 );
-
-  state[ 0] = chi( state[ 0], state[1], state[2] );
-
-  state[0] ^= RC[23];
-
-  return bswap_64( state[0] ) <= d_target;
+  return bswap_64( chi( state[ 0], ROTL64(state[ 6], 44), ROTL64(state[12], 43) ) ^ RC[23] ) <= d_target;
 }
 
 // hash length is 256 bits
@@ -352,7 +333,7 @@ __global__ __launch_bounds__( TPB52, 1 )
 #else
 __global__ __launch_bounds__( TPB50, 2 )
 #endif
-void gpu_mine( uint64_t* solution, int32_t* done, uint64_t const cnt, uint32_t const threads )
+void gpu_mine( uint64_t* solution, int32_t* done, uint64_t cnt, uint32_t threads )
 {
   uint64_t thread = blockDim.x * blockIdx.x + threadIdx.x;
   uint64_t nounce = cnt + thread;
@@ -399,6 +380,11 @@ uint64_t getHashCount()
 __host__
 void resetHashCount()
 {
+  h_done[0] = 0;
+
+  cudaMemcpy( d_done, h_done, sizeof( h_done ), cudaMemcpyHostToDevice );
+  cudaMemset( d_solution, 0xff, 8 );
+
   printable_hashrate_cnt = 0;
   print_counter = 0;
 
@@ -490,7 +476,8 @@ void gpu_init()
 
   if( !gpu_initialized )
   {
-    //cudaDeviceReset();
+    // CPU usage goes _insane_ without this.
+    cudaDeviceReset();
     cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync | cudaDeviceLmemResizeToMax );
     cudaDeviceSetCacheConfig( cudaFuncCachePreferL1 );
 
@@ -545,11 +532,6 @@ void gpu_cleanup()
 __host__
 bool find_message()
 {
-  h_done[0] = 0;
-
-  cudaMemcpy( d_done, h_done, sizeof( h_done ), cudaMemcpyHostToDevice );
-  cudaMemset( d_solution, 0xff, 8 );
-
   uint32_t threads = 1UL << intensity;
 
   uint32_t tpb;
@@ -580,15 +562,18 @@ bool find_message()
   printable_hashrate_cnt += threads;
 
   cudaMemcpy( h_done, d_done, sizeof( h_done ), cudaMemcpyDeviceToHost );
-  cudaMemcpy( h_message, d_solution, sizeof( h_message ), cudaMemcpyDeviceToHost );
-  memcpy( &solution[12], h_message, sizeof( h_message ) );
+  if( h_done[0] > 0 )
+  {
+    cudaMemcpy( h_message, d_solution, sizeof( h_message ), cudaMemcpyDeviceToHost );
+    memcpy( &solution[12], h_message, sizeof( h_message ) );
+  }
 
   ftime( &end );
   double t = (double)((end.time * 1000 + end.millitm) - (start.time * 1000 + start.millitm)) / 1000;
 
   if( t*10 > print_counter )
   {
-    print_counter++;
+    ++print_counter;
 
     // maybe breaking the control codes into macros is a good idea . . .
     printf( "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m%*.2f\x1b[0m\x1b[u\x1b[?25h"
