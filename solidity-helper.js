@@ -1,4 +1,3 @@
-var leftpad = require('leftpad');
 var web3utils = require('web3-utils');
 
 module.exports = {
@@ -49,9 +48,9 @@ module.exports = {
 
             if (typeof arg === 'number') {
                 if (arg < 0) {
-                    return leftpad((arg >>> 0).toString(16), 64, 'F');
+                    return (arg >>> 0).toString(16).padStart(64, 'F');
                 }
-                return leftpad((arg).toString(16), 64, 0);
+                return (arg).toString(16).padStart(64, 0);
             }
         })
 

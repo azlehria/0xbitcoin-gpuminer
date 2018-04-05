@@ -28,6 +28,7 @@
              'process_outputs_as_sources': 0,
              'action': ['nvcc -c <(_inputs) -o <(_outputs)\
                   -cudart static -m64 -use_fast_math -O3',
+                  '-gencode=arch=compute_70,code=\\\"sm_70,compute_70\\\"',
                   '-gencode=arch=compute_61,code=\\\"sm_61,compute_61\\\"',
                   '-gencode=arch=compute_52,code=\\\"sm_52,compute_52\\\"',
                   '-gencode=arch=compute_30,code=\\\"sm_30,compute_30\\\"']
@@ -37,6 +38,7 @@
              'process_outputs_as_sources': 1,
              'action': ['nvcc','-std=c++11','-m64','-Xcompiler=\"-fpic\"',
                   '-c','<@(_inputs)','-o','<@(_outputs)',
+                  '-gencode=arch=compute_70,code=\"sm_70,compute_70\"',
                   '-gencode=arch=compute_61,code=\"sm_61,compute_61\"',
                   '-gencode=arch=compute_52,code=\"sm_52,compute_52\"',
                   '-gencode=arch=compute_30,code=\"sm_30,compute_30\"']

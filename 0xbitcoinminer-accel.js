@@ -1,6 +1,4 @@
 var web3utils = require('web3-utils');
-var solidityHelper = require('./solidity-helper')
-var leftpad = require('leftpad');
 const BN = require('bn.js');
 var debugLogger = require('./lib/debug-logger')
 const miningLogger = require("./lib/mining-logger");
