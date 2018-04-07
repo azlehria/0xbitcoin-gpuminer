@@ -66,11 +66,10 @@ module.exports = {
         }
 
         ///this.mining = true;
-        var self = this;
         this.minerEthAddress = eth_account.address;
 
         let miningParameters = {};
-        await self.collectMiningParameters(this.minerEthAddress, miningParameters, self.miningStyle);
+        await this.collectMiningParameters(this.minerEthAddress, miningParameters, this.miningStyle);
 
         this.miningLogger.appendToStandardLog("Begin mining for " + this.minerEthAddress + " @ gasprice " + this.vault.getGasPriceGwei());
 
@@ -80,7 +79,10 @@ module.exports = {
             miningLogger.print("Gas price is", this.vault.getGasPriceGwei(), 'gwei');
         }
 
-        setInterval(() => { self.printMiningStats() }, PRINT_STATS_TIMEOUT);
+        //keep on looping!
+        setInterval(async() => { await this.collectMiningParameters(this.minerEthAddress, miningParameters, this.miningStyle) }, COLLECT_MINING_PARAMS_TIMEOUT);
+
+        setInterval(() => { this.printMiningStats() }, PRINT_STATS_TIMEOUT);
     },
 
     mineStuff(miningParameters) {
@@ -95,8 +97,6 @@ module.exports = {
 
     async collectMiningParameters(minerEthAddress, miningParameters, miningStyle) {
         //    miningLogger.print('collect parameters.. ')
-        var self = this;
-
         try {
             if (miningStyle === "pool") {
                 var parameters = await this.networkInterface.collectMiningParameters(minerEthAddress, miningParameters);
@@ -115,9 +115,6 @@ module.exports = {
         } catch (e) {
             miningLogger.print(e)
         }
-
-        //keep on looping!
-        setTimeout(function () { self.collectMiningParameters(minerEthAddress, miningParameters, self.miningStyle) }, COLLECT_MINING_PARAMS_TIMEOUT);
     },
 
     async updateCPUAddonParameters(miningParameters, miningStyle) {
@@ -190,8 +187,6 @@ module.exports = {
 
         CPPMiner.setMinerAddress(addressFrom);
 
-        var self = this;
-
         const printSolutionCount = async(solutionString) => {
             process.stdout.write("\x1b[s\x1b[?25l\x1b[3;22f\x1b[38;5;221m" + solutionString +
                                      "\x1b[0m\x1b[u\x1b[?25h");
@@ -208,8 +203,8 @@ module.exports = {
             if (digestBigNumber.lte(miningParameters.miningTarget)) {
                 solutionsSubmitted++;
 //                miningLogger.print("Submitting solution #" + solutionsSubmitted);
-                //  self.submitNewMinedBlock(minerEthAddress, solution_number, digest, challenge_number);
-                self.submitNewMinedBlock(addressFrom, minerEthAddress, solution_number,
+                //  this.submitNewMinedBlock(minerEthAddress, solution_number, digest, challenge_number);
+                this.submitNewMinedBlock(addressFrom, minerEthAddress, solution_number,
                                          digest, challenge_number, target, difficulty)
                 printSolutionCount(solutionsSubmitted.toString().padStart(8));
             //} else {
@@ -224,9 +219,9 @@ module.exports = {
 
         setInterval(() => { verifyAndSubmit() }, 500);
 
-        self.mining = true;
+        this.mining = true;
 
-        debugLogger.log('MINING:', self.mining)
+        debugLogger.log('MINING:', this.mining)
 
 //        CPPMiner.stop();
         CPPMiner.run((err, sol) => {
@@ -237,9 +232,9 @@ module.exports = {
                     miningLogger.print(e)
                 }
             }
-            self.mining = false;
+            this.mining = false;
 
-            debugLogger.log('MINING:', self.mining)
+            debugLogger.log('MINING:', this.mining)
         });
     },
 
