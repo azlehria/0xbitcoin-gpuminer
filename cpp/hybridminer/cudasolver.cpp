@@ -4,10 +4,9 @@
 #include <iostream>
 #include <cstring>
 #include "cudasolver.h"
-#include "sha3.h"
 
 //we will need this!
-#include "cuda_sha3.cu"
+#include "cuda_sha3.h"
 
 static const char* const ascii[] = {
   "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
@@ -27,9 +26,6 @@ static const char* const ascii[] = {
   "e0","e1","e2","e3","e4","e5","e6","e7","e8","e9","ea","eb","ec","ed","ee","ef",
   "f0","f1","f2","f3","f4","f5","f6","f7","f8","f9","fa","fb","fc","fd","fe","ff"
 };
-
-extern int32_t h_done[1];
-extern uint8_t solution[32];
 
 static uint8_t fromAscii( uint8_t c )
 {

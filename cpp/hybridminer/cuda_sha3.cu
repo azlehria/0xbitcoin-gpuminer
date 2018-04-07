@@ -1,23 +1,3 @@
-// default magic numbers
-#define INTENSITY 23
-#define CUDA_DEVICE 0
-// default magic numbers
-
-#include <stdio.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <time.h>
-#include <sys/timeb.h>
-
-#if defined(_MSC_VER)
-#  include <process.h>
-#else
-#  include <sys/types.h>
-#  include <unistd.h>
-#endif
-
-#include "cudasolver.h"
-
 /*
 Author: Mikers
 date march 4, 2018 for 0xbitcoin dev
@@ -30,23 +10,12 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
  * This is the parallel version of SHA-3.
  */
 
-#ifdef __INTELLISENSE__
- /* reduce vstudio warnings (__byteperm, blockIdx...) */
-#include <device_functions.h>
-#include <device_launch_parameters.h>
-#define __launch_bounds__(max_tpb, min_blocks)
-#endif
-
-#define TPB52 1024
-#define TPB50 384
-#define NPT 2
-#define NBN 2
+#include "cuda_sha3.h"
 
 int32_t intensity;
 int32_t cuda_device;
 int32_t clock_speed;
 int32_t compute_version;
-int32_t h_done[1] = { 0 };
 struct timeb start, end;
 
 uint64_t cnt;
@@ -56,7 +25,6 @@ uint64_t print_counter;
 bool gpu_initialized;
 bool new_input;
 
-uint8_t solution[32] = { 0 };
 uint8_t* h_message;
 uint8_t init_message[84];
 
@@ -67,8 +35,6 @@ uint8_t* d_challenge;
 uint8_t* d_hash_prefix;
 __constant__ uint64_t d_mid[25];
 __constant__ uint64_t d_target;
-
-#define ROTL64(x, y) (((x) << (y)) ^ ((x) >> (64 - (y))))
 
 __device__ __constant__ const uint64_t RC[24] = {
   0x0000000000000001, 0x0000000000008082, 0x800000000000808a,
@@ -117,7 +83,7 @@ uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
 }
 
 __device__
-bool keccak( uint64_t const nounce )
+bool keccak( uint64_t nounce )
 {
   uint64_t state[25], C[5], D[5];
 
@@ -377,6 +343,7 @@ uint64_t getHashCount()
 {
   return cnt;
 }
+
 __host__
 void resetHashCount()
 {
