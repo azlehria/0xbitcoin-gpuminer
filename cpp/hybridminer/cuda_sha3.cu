@@ -365,6 +365,8 @@ void resetHashCount()
 __host__
 void send_to_device( uint64_t target, uint64_t* message )
 {
+  cudaSetDevice( cuda_device );
+
   uint64_t C[4], D[5], mid[25];
   C[0] = message[0] ^ message[5] ^ message[10] ^ 0x100000000ull;
   C[1] = message[1] ^ message[6] ^ 0x8000000000000000ull;
@@ -489,6 +491,8 @@ void update_mining_inputs( uint64_t target, uint8_t* hash_prefix )
 __host__
 void gpu_cleanup()
 {
+  cudaSetDevice( cuda_device );
+
   cudaThreadSynchronize();
 
   cudaFree( d_done );
@@ -501,6 +505,8 @@ void gpu_cleanup()
 __host__
 bool find_message()
 {
+  cudaSetDevice( cuda_device );
+
   uint32_t threads = 1UL << intensity;
 
   uint32_t tpb;

@@ -36,7 +36,7 @@ void HybridMiner::setHardwareType( std::string const& hardwareType )
 
 void HybridMiner::setChallengeNumber( std::string const& challengeNumber )
 {
-  if( m_hardwareType == "cuda" )
+  if( isUsingCuda() )
   {
     cudaSolver.setChallenge( challengeNumber );
   }
@@ -48,7 +48,7 @@ void HybridMiner::setChallengeNumber( std::string const& challengeNumber )
 
 void HybridMiner::setDifficultyTarget( std::string const& difficultyTarget )
 {
-  if( m_hardwareType == "cuda" )
+  if( isUsingCuda() )
   {
     cudaSolver.setTarget( difficultyTarget );
   }
@@ -60,7 +60,7 @@ void HybridMiner::setDifficultyTarget( std::string const& difficultyTarget )
 
 void HybridMiner::setMinerAddress( std::string const& minerAddress )
 {
-  if( m_hardwareType == "cuda" )
+  if( isUsingCuda() )
   {
     cudaSolver.setAddress( minerAddress );
   }
@@ -73,7 +73,7 @@ void HybridMiner::setMinerAddress( std::string const& minerAddress )
 // This is a the "main" thread of execution
 void HybridMiner::run()
 {
-  if( m_hardwareType == "cuda" )
+  if( isUsingCuda() )
   {
     cudaSolver.init();
 
@@ -94,7 +94,7 @@ void HybridMiner::run()
 
 void HybridMiner::stop()
 {
-  if( m_hardwareType == "cuda" )
+  if( isUsingCuda() )
   {
     cudaSolver.stopFinding();
   }
@@ -157,4 +157,9 @@ std::string HybridMiner::solution() const
 std::string HybridMiner::getSolution()
 {
   return CUDASolver::getSolution();
+}
+
+bool HybridMiner::isUsingCuda()
+{
+  return m_hardwareType == "cuda";
 }

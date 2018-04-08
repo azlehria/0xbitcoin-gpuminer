@@ -38,6 +38,8 @@ private:
   //set a var in the solver !!
   void set( void ( CPUSolver::*fn )( std::string const& ), std::string const& p );
 
+  bool isUsingCuda();
+
   std::vector<CPUSolver> m_solvers;
   std::vector<std::thread> m_threads;
 
