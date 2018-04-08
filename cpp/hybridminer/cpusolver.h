@@ -1,6 +1,7 @@
 #ifndef _CPUSOLVER_H_
 #define _CPUSOLVER_H_
 
+#include <cassert>
 #include <atomic>
 #include <mutex>
 #include <string>

@@ -1,11 +1,13 @@
 #ifndef _CUDASOLVER_H_
 #define _CUDASOLVER_H_
 
+#include <cassert>
+#include <sstream>
+#include <iomanip>
 #include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
-#include <deque>
 #include <queue>
 
 class CUDASolver

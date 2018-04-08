@@ -9,8 +9,10 @@
 #include "cpusolver.h"
 #include "cudasolver.h"
 
+#include <chrono>
+#include <random>
 #include <thread>
-#include <string.h>
+#include <string>
 
 class HybridMiner
 {

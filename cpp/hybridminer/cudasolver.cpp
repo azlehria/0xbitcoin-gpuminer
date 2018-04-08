@@ -1,8 +1,3 @@
-#include <cassert>
-#include <sstream>
-#include <iomanip>
-#include <iostream>
-#include <cstring>
 #include "cudasolver.h"
 
 //we will need this!

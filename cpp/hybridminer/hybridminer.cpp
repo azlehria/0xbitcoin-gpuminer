@@ -1,11 +1,3 @@
-#include <chrono>
-#include <random>
-#include <thread>
-
-//allow print32_t out
-#include <iostream>
-#include <string.h>
-
 #include "hybridminer.h"
 
 // What is this code doing ? defining a new instance of a class ?

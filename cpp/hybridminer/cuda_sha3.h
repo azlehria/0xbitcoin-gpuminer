@@ -9,7 +9,6 @@
 #define TPB52 1024
 #define TPB50 384
 #define NPT 2
-#define NBN 2
 
 #include <stdio.h>
 #include <stdint.h>
@@ -25,34 +24,24 @@
 #  include <unistd.h>
 #endif
 
-#include "cudasolver.h"
-
 #ifdef __INTELLISENSE__
  /* reduce vstudio warnings (__byteperm, blockIdx...) */
 #  include <device_functions.h>
 #  include <device_launch_parameters.h>
 #  define __launch_bounds__(max_tpb, min_blocks)
-#endif
+#endif //__INTELLISENSE__
 
 #define ROTL64(x, y) (((x) << (y)) ^ ((x) >> (64 - (y))))
+#define ROTR64(x, y) (((x) >> (y)) ^ ((x) << (64 - (y))))
 
-// Ugly! What's a better way to do this?
-#if defined(__CUDACC__)
-int32_t h_done[1] = { 0 };
-uint8_t solution[32] = { 0 };
-#else
 extern int32_t h_done[1];
 extern uint8_t solution[32];
-#endif
 
 __global__
 void gpu_mine( uint64_t* solution, int32_t* done, uint64_t cnt, uint32_t threads );
 
 __host__
 void stop_solving();
-
-__host__
-int32_t gcd( int32_t a, int32_t b );
 
 __host__
 uint64_t getHashCount();

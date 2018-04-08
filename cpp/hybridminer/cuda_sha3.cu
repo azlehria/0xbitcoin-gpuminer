@@ -25,7 +25,10 @@ uint64_t print_counter;
 bool gpu_initialized;
 bool new_input;
 
-uint8_t* h_message;
+int32_t h_done[1] = { 0 };
+uint8_t solution[32] = { 0 };
+
+uint64_t* h_message;
 uint8_t init_message[84];
 
 int32_t* d_done;
@@ -48,10 +51,16 @@ __device__ __constant__ const uint64_t RC[24] = {
 };
 
 __device__ __forceinline__
-uint64_t bswap_64( uint64_t x )
+uint64_t bswap_64( uint64_t input )
 {
-  return ((uint64_t)(__byte_perm((uint32_t) x, 0, 0x0123)) << 32)
-    ^ __byte_perm((uint32_t)(x >> 32), 0, 0x0123);
+  uint64_t output;
+  asm( "{"
+       "  .reg .u32 oh, ol;"
+       "  prmt.b32 oh, %1, 0, 0x0123;"
+       "  prmt.b32 ol, %2, 0, 0x0123;"
+       "  mov.b64 %0, {ol,oh};"
+       "}" : "=l"(output) : "r"(((uint2&)input).x), "r"(((uint2&)input).y) );
+  return output;
 }
 
 __device__ __forceinline__
@@ -70,12 +79,14 @@ uint64_t xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e )
 __device__ __forceinline__
 uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
 {
-#if __CUDA_ARCH__ >= 500 && CUDA_VERSION >= 7050
+#if __CUDA_ARCH__ >= 500
   uint64_t output = 0;
   asm( "{"
-       "  lop3.b32 [&output], [&a], [&b], [&c], 0xD2;"
-       "  lop3.b32 [&output+4], [&a+4], [&b+4], [&c+4], 0xD2;"
-       "}" );
+       "  lop3.b32 %0, %2, %3, %4, 0xD2;"
+       "  lop3.b32 %1, %5, %6, %7, 0xD2;"
+       "}" : "=r"(((uint2&)output).x), "=r"(((uint2&)output).y)
+           : "r"(((uint2&)a).x), "r"(((uint2&)b).x), "r"(((uint2&)c).x),
+             "r"(((uint2&)a).y), "r"(((uint2&)b).y), "r"(((uint2&)c).y) );
   return output;
 #else
   return a ^ ((~b) & c);
@@ -89,7 +100,7 @@ bool keccak( uint64_t nounce )
 
   int32_t x;
 
-  state[ 2] = d_mid[ 2] ^ ROTL64(nounce, 44);
+  state[ 2] = d_mid[ 2] ^ ROTR64(nounce, 20);
   state[ 4] = d_mid[ 4] ^ ROTL64(nounce, 14);
   state[ 0] = chi( d_mid[ 0], d_mid[ 1], state[ 2] );
   state[ 0] = state[0] ^ RC[0];
@@ -99,7 +110,7 @@ bool keccak( uint64_t nounce )
   state[ 4] = chi( state[ 4], d_mid[ 0], d_mid[ 1] );
 
   C[0] = d_mid[ 6] ^ ROTL64(nounce, 20);
-  state[ 9] = d_mid[ 9] ^ ROTL64(nounce, 62);
+  state[ 9] = d_mid[ 9] ^ ROTR64(nounce,  2);
   state[ 5] = chi( d_mid[ 5], C[ 0], d_mid[7] );
   state[ 6] = chi( C[ 0], d_mid[ 7], d_mid[8] );
   state[ 7] = chi( d_mid[ 7], d_mid[ 8], state[9] );
@@ -122,16 +133,16 @@ bool keccak( uint64_t nounce )
   state[18] = chi( state[18], d_mid[19], C[0] );
   state[19] = chi( d_mid[19], C[0], d_mid[16] );
 
-  C[0] = d_mid[20] ^ ROTL64(nounce, 63);
-  C[1] = d_mid[21] ^ ROTL64(nounce, 55);
-  state[22] = d_mid[22] ^ ROTL64(nounce, 39);
+  C[0] = d_mid[20] ^ ROTR64(nounce,  1);
+  C[1] = d_mid[21] ^ ROTR64(nounce,  9);
+  state[22] = d_mid[22] ^ ROTR64(nounce, 25);
   state[20] = chi( C[0], C[1], state[22] );
   state[21] = chi( C[1], state[22], d_mid[23] );
   state[22] = chi( state[22], d_mid[23], d_mid[24] );
   state[23] = chi( d_mid[23], d_mid[24], C[0] );
   state[24] = chi( d_mid[24], C[0], C[1] );
 
-#if __CUDA_ARCH__ >= 600
+#if __CUDA_ARCH__ >= 350
 #pragma unroll 22
 #endif
   for( int32_t i = 1; i < 23; ++i )
@@ -148,7 +159,7 @@ bool keccak( uint64_t nounce )
     //     temp = C[(i + 4) % 5] ^ ROTL64(C[(i + 1) % 5], 1);
     //     for j = 0 to 25, j += 5
     //          state[j + i] ^= temp;
-#if __CUDA_ARCH__ >= 600
+#if __CUDA_ARCH__ >= 350
     D[0] = ROTL64(C[1], 1) ^ C[4];
     D[1] = ROTL64(C[2], 1) ^ C[0];
     D[2] = ROTL64(C[3], 1) ^ C[1];
@@ -209,23 +220,23 @@ bool keccak( uint64_t nounce )
     //     state[j] = ROTL64(temp, r[i]);
     //     temp = C[0];
     C[0] = state[1];
-    state[ 1] = ROTL64( state[ 6], 44 );
+    state[ 1] = ROTR64( state[ 6], 20 );
     state[ 6] = ROTL64( state[ 9], 20 );
-    state[ 9] = ROTL64( state[22], 61 );
-    state[22] = ROTL64( state[14], 39 );
+    state[ 9] = ROTR64( state[22],  3 );
+    state[22] = ROTR64( state[14], 25 );
     state[14] = ROTL64( state[20], 18 );
-    state[20] = ROTL64( state[ 2], 62 );
-    state[ 2] = ROTL64( state[12], 43 );
+    state[20] = ROTR64( state[ 2],  2 );
+    state[ 2] = ROTR64( state[12], 21 );
     state[12] = ROTL64( state[13], 25 );
     state[13] = ROTL64( state[19],  8 );
-    state[19] = ROTL64( state[23], 56 );
-    state[23] = ROTL64( state[15], 41 );
+    state[19] = ROTR64( state[23],  8 );
+    state[23] = ROTR64( state[15], 23 );
     state[15] = ROTL64( state[ 4], 27 );
     state[ 4] = ROTL64( state[24], 14 );
     state[24] = ROTL64( state[21],  2 );
-    state[21] = ROTL64( state[ 8], 55 );
-    state[ 8] = ROTL64( state[16], 45 );
-    state[16] = ROTL64( state[ 5], 36 );
+    state[21] = ROTR64( state[ 8],  9 );
+    state[ 8] = ROTR64( state[16], 19 );
+    state[16] = ROTR64( state[ 5], 28 );
     state[ 5] = ROTL64( state[ 3], 28 );
     state[ 3] = ROTL64( state[18], 21 );
     state[18] = ROTL64( state[17], 15 );
@@ -286,38 +297,35 @@ bool keccak( uint64_t nounce )
     C[x] = xor5( state[x], state[x + 5], state[x + 10], state[x + 15], state[x + 20] );
   }
 
-  state[ 0] = state[ 0] ^ ROTL64(C[1], 1) ^ C[4];
-  state[ 6] = state[ 6] ^ ROTL64(C[2], 1) ^ C[0];
-  state[12] = state[12] ^ ROTL64(C[3], 1) ^ C[1];
+  D[0] = ROTL64(C[1], 1) ^ C[4];
+  D[1] = ROTL64(C[2], 1) ^ C[0];
+  D[2] = ROTL64(C[3], 1) ^ C[1];
 
-  return bswap_64( chi( state[ 0], ROTL64(state[ 6], 44), ROTL64(state[12], 43) ) ^ RC[23] ) <= d_target;
+  state[ 0] = state[ 0] ^ D[0];
+  state[ 6] = ROTR64(state[ 6] ^ D[1], 20);
+  state[12] = ROTR64(state[12] ^ D[2], 21);
+
+  state[ 0] = chi( state[ 0], state[ 6], state[12] ) ^ RC[23];
+
+  return bswap_64( state[ 0] ) <= d_target;
 }
 
-// hash length is 256 bits
-#if __CUDA_ARCH__ > 500
+#if __CUDA_ARCH__ >= 500
 __global__ __launch_bounds__( TPB52, 1 )
 #else
 __global__ __launch_bounds__( TPB50, 2 )
 #endif
 void gpu_mine( uint64_t* solution, int32_t* done, uint64_t cnt, uint32_t threads )
 {
-  uint64_t thread = blockDim.x * blockIdx.x + threadIdx.x;
+  int32_t thread = blockDim.x * blockIdx.x + threadIdx.x;
   uint64_t nounce = cnt + thread;
 
-#if __CUDA_ARCH__ > 500
-  uint64_t step = gridDim.x * blockDim.x;
-  uint64_t maxNonce = cnt + threads;
-  for( ; nounce < maxNonce; nounce += step )
-  {
-#else
   if( thread < threads )
   {
-#endif
-
     if( keccak( nounce ) )
     {
-      atomicExch( &done[0], thread );
-      if( done[0] == thread )
+      atomicExch( done, thread );
+      if( *done == thread )
       {
         *solution = nounce;
       }
@@ -333,12 +341,6 @@ void stop_solving()
 }
 
 __host__
-int32_t gcd( int32_t a, int32_t b )
-{
-  return ( a == 0 ) ? b : gcd( b % a, a );
-}
-
-__host__
 uint64_t getHashCount()
 {
   return cnt;
@@ -347,6 +349,8 @@ uint64_t getHashCount()
 __host__
 void resetHashCount()
 {
+  cudaSetDevice( cuda_device );
+
   h_done[0] = 0;
 
   cudaMemcpy( d_done, h_done, sizeof( h_done ), cudaMemcpyHostToDevice );
@@ -399,9 +403,9 @@ void send_to_device( uint64_t target, uint64_t* message )
   mid[23] = ROTL64(D[0], 41);
   mid[24] = ROTL64(D[1],  2);
 
-  cudaMemcpyToSymbol( d_mid, mid, sizeof( mid ), cuda_device, cudaMemcpyHostToDevice);
+  cudaMemcpyToSymbol( d_mid, mid, sizeof( mid ), 0, cudaMemcpyHostToDevice);
 
-  cudaMemcpyToSymbol( d_target, &target, sizeof( target ), cuda_device, cudaMemcpyHostToDevice);
+  cudaMemcpyToSymbol( d_target, &target, sizeof( target ), 0, cudaMemcpyHostToDevice);
 }
 
 /**
@@ -449,8 +453,8 @@ void gpu_init()
     cudaDeviceSetCacheConfig( cudaFuncCachePreferL1 );
 
     cudaMalloc( (void**)&d_done, sizeof( int32_t ) );
-    cudaMalloc( (void**)&d_solution, 32 ); // solution
-    cudaMallocHost( (void**)&h_message, 32 );
+    cudaMalloc( (void**)&d_solution, sizeof( uint64_t ) ); // solution
+    cudaMallocHost( (void**)&h_message, sizeof( uint64_t ) );
 
     (uint32_t&)(init_message[52]) = 014533075101u;
     (uint32_t&)(init_message[56]) = 014132271150u;
@@ -485,8 +489,6 @@ void update_mining_inputs( uint64_t target, uint8_t* hash_prefix )
 __host__
 void gpu_cleanup()
 {
-  if( !gpu_initialized ) return;
-
   cudaThreadSynchronize();
 
   cudaFree( d_done );
@@ -506,7 +508,7 @@ bool find_message()
   if( compute_version > 500 )
   {
     tpb = TPB52;
-    grid.x = ( threads + ( NPT*tpb ) - 1 ) / ( NPT*tpb );
+    grid.x = ( threads + tpb - 1 ) / tpb;
   }
   else
   {
@@ -531,8 +533,8 @@ bool find_message()
   cudaMemcpy( h_done, d_done, sizeof( h_done ), cudaMemcpyDeviceToHost );
   if( h_done[0] > 0 )
   {
-    cudaMemcpy( h_message, d_solution, sizeof( h_message ), cudaMemcpyDeviceToHost );
-    memcpy( &solution[12], h_message, sizeof( h_message ) );
+    cudaMemcpy( h_message, d_solution, sizeof( uint64_t ), cudaMemcpyDeviceToHost );
+    memcpy( &solution[12], h_message, sizeof( uint64_t ) );
   }
 
   ftime( &end );
