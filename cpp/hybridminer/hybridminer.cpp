@@ -36,7 +36,7 @@ void HybridMiner::setHardwareType( std::string const& hardwareType )
 
 void HybridMiner::setChallengeNumber( std::string const& challengeNumber )
 {
-  if( strcmp( m_hardwareType.c_str(), "cuda" ) == 0 )
+  if( m_hardwareType == "cuda" )
   {
     cudaSolver.setChallenge( challengeNumber );
   }
@@ -48,7 +48,7 @@ void HybridMiner::setChallengeNumber( std::string const& challengeNumber )
 
 void HybridMiner::setDifficultyTarget( std::string const& difficultyTarget )
 {
-  if( strcmp( m_hardwareType.c_str(), "cuda" ) == 0 )
+  if( m_hardwareType == "cuda" )
   {
     cudaSolver.setTarget( difficultyTarget );
   }
@@ -60,7 +60,7 @@ void HybridMiner::setDifficultyTarget( std::string const& difficultyTarget )
 
 void HybridMiner::setMinerAddress( std::string const& minerAddress )
 {
-  if( strcmp( m_hardwareType.c_str(), "cuda" ) == 0 )
+  if( m_hardwareType == "cuda" )
   {
     cudaSolver.setAddress( minerAddress );
   }
@@ -73,7 +73,7 @@ void HybridMiner::setMinerAddress( std::string const& minerAddress )
 // This is a the "main" thread of execution
 void HybridMiner::run()
 {
-  if( strcmp( m_hardwareType.c_str(), "cuda" ) == 0 )
+  if( m_hardwareType == "cuda" )
   {
     cudaSolver.init();
 
@@ -94,7 +94,7 @@ void HybridMiner::run()
 
 void HybridMiner::stop()
 {
-  if( strcmp( m_hardwareType.c_str(), "cuda" ) == 0 )
+  if( m_hardwareType == "cuda" )
   {
     cudaSolver.stopFinding();
   }
