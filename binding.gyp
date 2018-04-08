@@ -19,17 +19,20 @@
       ],
       'cflags_cc+': [ '-march=native', '-O3', '-std=c++11' ],
 
+# Comment next line for test builds
+      'defines': [ 'NDEBUG'],
+
       "include_dirs": ["<!(node -e \"require('nan')\")"],
 
       'rules': [{
         'extension': 'cu',
         'inputs': ['<(RULE_INPUT_PATH)'],
-        'outputs':['<(INTERMEDIATE_DIR)/<(RULE_INPUT_ROOT).o'],
+        'outputs':['<(INTERMEDIATE_DIR)/<(RULE_INPUT_ROOT).<(obj)'],
         'conditions': [
           [ 'OS=="win"',
             {'rule_name': 'cuda on windows',
              'message': "compile cuda file on windows",
-             'process_outputs_as_sources': 1,
+             'process_outputs_as_sources': 0,
              'action': ['nvcc -c <(_inputs) -o <(_outputs)\
                         -cudart static -m64 -use_fast_math -O3',
                         '-gencode=arch=compute_70,code=\\\"sm_70,compute_70\\\"',
@@ -63,34 +66,12 @@
           'libraries': ['-lcudart_static'],
           'include_dirs': ['/usr/local/include'],
           'library_dirs': ['/usr/local/lib',
-                           '/usr/local/cuda/lib64'
-                          ],
+                           '/usr/local/cuda/lib64'],
         }],
         [ 'OS=="win"', {
-          'conditions': [
-            ['target_arch=="x64"',
-             { 'variables': { 'arch': 'x64' }},
-             { 'variables': { 'arch': 'Win32' }}
-            ],
-          ],
-          'variables': {
-            'cuda_root%': '$(CUDA_PATH)'
-          },
-
-          'libraries': [
-            'cudart_static.lib',
-            'cuda_sha3.o'
-          ],
-
-          'library_dirs': [
-            '<(cuda_root)/lib/<(arch)',
-            '<(module_root_dir)/build/Release/obj/hybridminer'
-          ],
-
-          "include_dirs": [
-            "<(cuda_root)/include",
-            'cpp/hybridminer'
-          ]
+          'libraries': [ 'cudart_static.lib'],
+          'library_dirs': [ '$(CUDA_PATH)/lib/<(target_arch)'],
+          "include_dirs": [ "$(CUDA_PATH)/include"]
         }]
       ],
       'configurations': {
@@ -107,8 +88,7 @@
               'RuntimeLibrary': 0,
               'WarningLevel': 3,
               'ExceptionHandling': 1,
-              'DebugInformationFormat': 3,
-              'AdditionalIncludeDirectories': [ '..\\cpp\\hybridminer' ]
+              'DebugInformationFormat': 3
             }
           }
         }
