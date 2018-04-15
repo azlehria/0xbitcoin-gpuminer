@@ -6,8 +6,8 @@
 #define CUDA_DEVICE 0
 // default magic numbers
 
-#define TPB52 1024
-#define TPB50 384
+#define TPB50 1024u
+#define TPB35 384u
 #define NPT 2
 
 #include <stdio.h>
@@ -31,14 +31,20 @@
 #  define __launch_bounds__(max_tpb, min_blocks)
 #endif //__INTELLISENSE__
 
+#if __CUDA_ARCH__ > 500
+#  define KERNEL_LAUNCH_PARAMS __global__ __launch_bounds__( TPB50, 1 )
+#else
+#  define KERNEL_LAUNCH_PARAMS __global__ __launch_bounds__( TPB35, 2 )
+#endif
+
 #define ROTL64(x, y) (((x) << (y)) ^ ((x) >> (64 - (y))))
 #define ROTR64(x, y) (((x) >> (y)) ^ ((x) << (64 - (y))))
 
-extern int32_t h_done[1];
 extern uint8_t solution[32];
+extern uint64_t* h_message;
 
 __global__
-void gpu_mine( uint64_t* solution, int32_t* done, uint64_t cnt, uint32_t threads );
+void gpu_mine( uint64_t* solution, /*int32_t* done,*/ uint64_t cnt );
 
 __host__
 void stop_solving();

@@ -179,7 +179,7 @@ void CUDASolver::findSolution()
     find_message();
 
 
-    if( h_done[0] > 0 )
+    if( *h_message != UINT64_MAX )
     {
       for( int32_t i = 0; i < 32; i++ )
       {
@@ -188,7 +188,7 @@ void CUDASolver::findSolution()
       CUDASolver::pushSolution( bytesToString( byte_solution ) );
       resetHashCount();
     }
-  } while( h_done[0] >= 0 );
+  } while( *h_message == UINT64_MAX );
 }
 
 std::string CUDASolver::hexStr( char* data, int32_t len )
