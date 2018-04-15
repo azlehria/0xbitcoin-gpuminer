@@ -384,7 +384,7 @@ void gpu_init()
     }
     memcpy( solution, &init_message[52], 32 );
 
-    uint32_t h_threads{ 1UL << intensity };
+    uint32_t h_threads{ 1u << intensity };
     cudaMemcpyToSymbol( threads, &h_threads, sizeof( h_threads ), 0, cudaMemcpyHostToDevice );
 
     gpu_initialized = true;
@@ -428,7 +428,7 @@ bool find_message()
 {
   cudaSetDevice( cuda_device );
 
-  uint32_t threads{ 1UL << intensity };
+  uint32_t threads{ 1u << intensity };
 
   uint32_t tpb{ compute_version > 500 ? TPB50 : TPB35 };
   dim3 grid{ (threads + tpb - 1) / tpb };
