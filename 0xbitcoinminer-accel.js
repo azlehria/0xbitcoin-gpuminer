@@ -1,9 +1,9 @@
-var web3utils = require('web3-utils');
+const web3utils = require('web3-utils');
 const BN = require('bn.js');
-var debugLogger = require('./lib/debug-logger')
+const debugLogger = require('./lib/debug-logger')
 const miningLogger = require("./lib/mining-logger");
-var tokenContractJSON = require('./contracts/_0xBitcoinToken.json');
-var CPPMiner = require('./build/Release/hybridminer');
+const tokenContractJSON = require('./contracts/_0xBitcoinToken.json');
+const CPPMiner = require('./build/Release/hybridminer');
 
 //only load this if selecting 'gpu mine!!!'
 
@@ -12,8 +12,6 @@ var tokenContract;
 const PRINT_STATS_TIMEOUT = 5000;
 const COLLECT_MINING_PARAMS_TIMEOUT = 4000;
 var hardwareType = 'cuda'; //default
-
-var solutionsSubmitted = 0;
 
 module.exports = {
     async init(web3, vault, miningLogger)
@@ -39,17 +37,14 @@ module.exports = {
             CPPMiner.setHardwareType('cpu');
         }
 
-        //console.log('\n')
-
-        //miningParameters
-
         if (this.miningStyle == "solo") {
             //if solo mining need a full account
             var eth_account = this.vault.getFullAccount();
 
-            if (eth_account.accountType == "readOnly" || eth_account.privateKey == null || typeof eth_account.privateKey == 'undefined ') {
+            if (eth_account.accountType == "readOnly"
+                || !(eth_account.hasOwnProperty('privateKey')
+                     && (typeof eth_account.privateKey == 'undefined' || eth_account.privateKey != null))) {
                 miningLogger.print("The account", eth_account.address, 'does not have an associated private key. Please select another account or mine to a pool.');
-                //console.log('\n')
                 return;
             }
         } else if (this.miningStyle == "pool") {
@@ -58,11 +53,7 @@ module.exports = {
 
         if (eth_account == null || eth_account.address == null) {
             miningLogger.print("Please create a new account with 'account new' before solo mining.")
-            //console.log('\n')
             return false;
-//        } else {
-//            miningLogger.print("Selected mining account:\n\t", eth_account.address);
-            //console.log('\n')
         }
 
         ///this.mining = true;
@@ -96,7 +87,6 @@ module.exports = {
     },
 
     async collectMiningParameters(minerEthAddress, miningParameters, miningStyle) {
-        //    miningLogger.print('collect parameters.. ')
         try {
             if (miningStyle === "pool") {
                 var parameters = await this.networkInterface.collectMiningParameters(minerEthAddress, miningParameters);
@@ -104,7 +94,6 @@ module.exports = {
                 var parameters = await this.networkInterface.collectMiningParameters();
             }
 
-            //miningLogger.print('collected mining params ', parameters)
             miningParameters.miningDifficulty = parameters.miningDifficulty;
             miningParameters.challengeNumber = parameters.challengeNumber;
             miningParameters.miningTarget = parameters.miningTarget;
@@ -121,8 +110,6 @@ module.exports = {
         let bResume = false;
 
         if (miningStyle == 'pool' && this.challengeNumber != null) {
-            //if we are in a pool, keep mining again because our soln probably didnt solve the whole block and we want shares
-            //   bResume = true;
             CPPMiner.setChallengeNumber(this.challengeNumber);
             bResume = true;
         }
@@ -130,7 +117,6 @@ module.exports = {
         if (this.challengeNumber != miningParameters.challengeNumber) {
             this.challengeNumber = miningParameters.challengeNumber
 
-            //miningLogger.print("New challenge received");
             CPPMiner.setChallengeNumber(this.challengeNumber);
             bResume = true;
             process.stdout.write("\x1b[s\x1b[?25l\x1b[2;13f\x1b[38;5;34m" + this.challengeNumber.substring(2, 10) +
@@ -140,22 +126,19 @@ module.exports = {
         if (this.miningTarget == null || !this.miningTarget.eq(miningParameters.miningTarget)) {
             this.miningTarget = miningParameters.miningTarget
 
-//            miningLogger.print("New mining target received");
             CPPMiner.setDifficultyTarget("0x" + this.miningTarget.toString(16, 64));
         }
 
         if (this.miningDifficulty != miningParameters.miningDifficulty) {
             this.miningDifficulty = miningParameters.miningDifficulty
 
-//            miningLogger.print("New difficulty set", this.miningDifficulty);
-            process.stdout.write("\x1b[s\x1b[?25l\x1b[3;14f\x1b[38;5;34m" + this.miningDifficulty.toString().padEnd(7) +
+            process.stdout.write("\x1b[s\x1b[?25l\x1b[3;14f\x1b[38;5;34m" +
+                                 this.miningDifficulty.toString().padEnd(7) +
                                  "\x1b[0m\x1b[u\x1b[?25h");
-//            CPPMiner.setDifficulty( parseInt( this.miningTarget.toString(16, 64).substring(0, 16), 16 ) );
+            // CPPMiner.setDifficulty( parseInt( this.miningTarget.toString(16, 64).substring(0, 16), 16 ) );
         }
 
         if (bResume && !this.mining) {
-//            miningLogger.print("Restarting mining operations");
-
             try {
                 // C++ module entry point
                 this.mineStuff(miningParameters);
@@ -167,17 +150,15 @@ module.exports = {
 
     //async submitNewMinedBlock(addressFrom, solution_number, digest_bytes, challenge_number)
     submitNewMinedBlock(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty) {
-        //this.miningLogger.appendToStandardLog("Giving mined solution to network interface " + challenge_number);
-
         this.networkInterface.queueMiningSolution(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty)
     },
 
     // contractData , -> miningParameters
     mineCoins(web3, miningParameters, minerEthAddress) {
-        var target = miningParameters.miningTarget;
-        var difficulty = miningParameters.miningDifficulty;
+        let target = miningParameters.miningTarget;
+        let difficulty = miningParameters.miningDifficulty;
 
-        var addressFrom;
+        let addressFrom;
 
         if (this.miningStyle == "pool") {
             addressFrom = miningParameters.poolEthAddress;
@@ -187,26 +168,18 @@ module.exports = {
 
         CPPMiner.setMinerAddress(addressFrom);
 
-        const printSolutionCount = async(solutionString) => {
-            process.stdout.write("\x1b[s\x1b[?25l\x1b[3;22f\x1b[38;5;221m" + solutionString +
-                                     "\x1b[0m\x1b[u\x1b[?25h");
-        }
-
         const verifyAndSubmit = () => {
-            var solution_number = "0x" + CPPMiner.getSolution();
+            let solution_number = "0x" + CPPMiner.getSolution();
             if(solution_number == "0x" || web3utils.toBN(solution_number).eq(0)) { return; }
-            const challenge_number = miningParameters.challengeNumber;
-            const digest = web3utils.soliditySha3(challenge_number,
-                                                  addressFrom,
-                                                  solution_number);
-            const digestBigNumber = web3utils.toBN(digest);
+            let challenge_number = miningParameters.challengeNumber;
+            let digest = web3utils.soliditySha3(challenge_number,
+                                                addressFrom,
+                                                solution_number);
+            let digestBigNumber = web3utils.toBN(digest);
             if (digestBigNumber.lte(miningParameters.miningTarget)) {
-                solutionsSubmitted++;
-//                miningLogger.print("Submitting solution #" + solutionsSubmitted);
                 //  this.submitNewMinedBlock(minerEthAddress, solution_number, digest, challenge_number);
                 this.submitNewMinedBlock(addressFrom, minerEthAddress, solution_number,
                                          digest, challenge_number, target, difficulty)
-                printSolutionCount(solutionsSubmitted.toString().padStart(8));
             //} else {
             //    console.error("Verification failed!\n",
             //                  "challenge:", challenge_number, "\n",
@@ -223,7 +196,6 @@ module.exports = {
 
         debugLogger.log('MINING:', this.mining)
 
-//        CPPMiner.stop();
         CPPMiner.run((err, sol) => {
             if (sol) {
                 try {

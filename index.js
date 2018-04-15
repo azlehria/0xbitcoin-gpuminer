@@ -19,7 +19,7 @@ function init() {
 
     prompt.message = null;
     prompt.delimiter = ":";
-    prompt.start();
+    prompt.start({ noHandleSIGINT: true });
 
     if(process.argv.length > 2) {
         handleCommand(process.argv.slice(2).join(' '));
@@ -111,13 +111,6 @@ async function handleCommand(result) {
     var subsystem_option = split_command[2];
 
     if (subsystem_name == 'account') {
-        if (subsystem_command === 'new' || subsystem_command === 'list') {
-            Vault.requirePassword(true) //for encryption of private key !
-        }
-
-        var unlocked = await Vault.init(web3, miningLogger);
-        if (!unlocked) return false;
-
         await Vault.handleAccountCommand(subsystem_command, subsystem_option)
     }
 
