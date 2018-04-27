@@ -9,7 +9,6 @@ extern "C" {
 #include <stdint.h>
 #include <stdlib.h>
 
-inline void keccakf( void* state );
 #define decshake(bits) \
   int32_t shake##bits(uint8_t*, size_t, const uint8_t*, size_t);
 

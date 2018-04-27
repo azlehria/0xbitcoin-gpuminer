@@ -44,7 +44,7 @@ auto CPUSolver::findSolution() const -> void
     std::memcpy( solution, buffer.data(), 84 );
     solution[8] = MinerState::getIncSearchSpace( 1 );
 
-    keccakf( solution );
+    // keccakf( solution );
     // keccak_256( &digest[0], digest.size(), &buffer[0], buffer.size() );
 
     // printf("%" PRIx64 "\n%" PRIx64 "\n", bswap64( digest.data() ), reinterpret_cast<uint64_t&>(digest[0]));

@@ -48,7 +48,7 @@ static const uint64_t RC[24] = \
   REPEAT5(e; v += s;)
 
 /*** Keccak-f[1600] ***/
-inline void keccakf( void* state )
+static inline void keccakf( void* state )
 {
   uint64_t* a = (uint64_t*)state;
   uint64_t b[5] = { 0 };

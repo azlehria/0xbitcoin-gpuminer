@@ -7,11 +7,11 @@ CUDASolver::CUDASolver( int32_t device, int32_t intensity ) noexcept :
 m_stop( false ),
 m_new_target( true ),
 m_new_message( true ),
-m_device( device ),
 m_threads( 1u << intensity ),
+m_gpu_initialized( false ),
+m_device( device ),
 m_grid( 1u ),
-m_block( 1u ),
-m_gpu_initialized( false )
+m_block( 1u )
 {
 }
 
