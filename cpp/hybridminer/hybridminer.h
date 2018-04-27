@@ -10,6 +10,7 @@
 #include "cudasolver.h"
 #include "miner_state.h"
 
+#include <memory>
 #include <chrono>
 #include <random>
 #include <thread>

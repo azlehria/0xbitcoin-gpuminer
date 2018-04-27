@@ -149,7 +149,7 @@ auto MinerState::printStatus() -> void
   // maybe breaking the control codes into macros is a good idea . . .
   ss_out << "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m"
          << std::setw( 8 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-         << ( isnan( t2 ) || isinf( t2 ) ? 0 : t2 )
+         << ( std::isnan( t2 ) || std::isinf( t2 ) ? 0 : t2 )
          << "\x1b[3;36f\x1b[38;5;208m"
          << std::setw( 25 ) << m_hash_count_printable
          << "\x1b[2;75f\x1b[38;5;33m"

@@ -18,7 +18,8 @@
         "cpp/hybridminer/cudasolver.cpp",
         "cpp/hybridminer/cuda_sha3.cu"
       ],
-      'cflags_cc+': [ '-march=native', '-O3', '-std=c++11', '-Wall' ],
+      'cflags_cc!': ['-std=gnu++0x'],
+      'cflags_cc+': [ '-march=native', '-O3', '-std=c++14', '-Wall' ],
 
 # Comment next line for test builds
       'defines': [ 'NDEBUG'],
@@ -46,7 +47,7 @@
             {'rule_name': 'cuda on linux',
              'message': "compile cuda file on linux",
              'process_outputs_as_sources': 1,
-             'action': ['nvcc','-std=c++11','-m64','-Xcompiler=\"-fpic\"',
+             'action': ['nvcc','-std=c++14','-m64','-Xcompiler=\"-fpic\"',
                         '-c','<@(_inputs)','-o','<@(_outputs)',
                         '-gencode=arch=compute_70,code=\"sm_70,compute_70\"',
                         '-gencode=arch=compute_61,code=\"sm_61,compute_61\"',

@@ -13,7 +13,13 @@ init();
 function init() {
     let os = require('os');
     global.oldWindows = process.platform == 'win32' && (os.release().slice(0,2) < 10 || os.release().slice(5,10) < 14392);
-    global.jsConfig = require(process.execPath.substring(0, process.execPath.lastIndexOf('\\')) + '/0xbitcoin.json');
+
+    if (process.platform == 'win32') {
+        global.jsConfig = require(process.execPath.substring(0, process.execPath.lastIndexOf('\\')) + '/0xbitcoin.json');
+    } else {
+        global.jsConfig = require(process.execPath.substring(0, process.execPath.lastIndexOf('/')) + '/0xbitcoin.json');
+    }
+
     if (!jsConfig)
     {
         miningLogger('Configuration file missing.');

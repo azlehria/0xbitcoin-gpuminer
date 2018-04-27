@@ -13,6 +13,8 @@
 #include <atomic>
 #include <string>
 
+#include <cstring>
+#include <cmath>
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>

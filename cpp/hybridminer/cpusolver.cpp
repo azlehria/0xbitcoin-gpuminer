@@ -1,5 +1,6 @@
 #include "cpusolver.h"
 #include "sha3.h"
+#include <cstring>
 
 // --------------------------------------------------------------------
 

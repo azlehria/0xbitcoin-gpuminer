@@ -268,7 +268,13 @@ void cuda_mine( uint64_t* __restrict__ solution, const uint64_t cnt )
 
   if( keccak( nounce ) )
   {
+#if defined(_MSC_VER)
     atomicCAS( solution, UINT64_MAX, nounce );
+#else
+    atomicCAS( reinterpret_cast<unsigned long long*>(solution),
+               static_cast<unsigned long long>(UINT64_MAX),
+               static_cast<unsigned long long>(nounce) );
+#endif
   }
 }
 
