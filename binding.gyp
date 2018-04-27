@@ -13,11 +13,12 @@
         "cpp/hybridminer/addon.cc",
         "cpp/hybridminer/hybridminer.cpp",
         "cpp/hybridminer/cpusolver.cpp",
+        "cpp/hybridminer/miner_state.cpp",
         "cpp/hybridminer/sha3.c",
         "cpp/hybridminer/cudasolver.cpp",
         "cpp/hybridminer/cuda_sha3.cu"
       ],
-      'cflags_cc+': [ '-march=native', '-O3', '-std=c++11' ],
+      'cflags_cc+': [ '-march=native', '-O3', '-std=c++11', '-Wall' ],
 
 # Comment next line for test builds
       'defines': [ 'NDEBUG'],
@@ -88,7 +89,8 @@
               'MultiProcessorCompilation': 'true',
               'Optimization': 3,
               'RuntimeLibrary': 0,
-              'WarningLevel': 3,
+              'WarningLevel': 4, # Wall is _completely batshit_ in MSVC
+              'DisableSpecificWarnings': ['4100'], # formal argument not used
               'ExceptionHandling': 1,
               'DebugInformationFormat': 3
             }

@@ -1,6 +1,7 @@
+'use strict';
+
 const web3utils = require('web3-utils');
 const BN = require('bn.js');
-const debugLogger = require('./lib/debug-logger')
 const miningLogger = require("./lib/mining-logger");
 const tokenContractJSON = require('./contracts/_0xBitcoinToken.json');
 const CPPMiner = require('./build/Release/hybridminer');
@@ -9,90 +10,57 @@ const CPPMiner = require('./build/Release/hybridminer');
 
 var tokenContract;
 
-const PRINT_STATS_TIMEOUT = 5000;
+const PRINT_STATS_TIMEOUT = 100;
+const PRINT_STATS_BARE_TIMEOUT = 5000;
 const COLLECT_MINING_PARAMS_TIMEOUT = 4000;
 var hardwareType = 'cuda'; //default
+var startTime;
+var newSolution = false;
+var addressFrom;
 
 module.exports = {
-    async init(web3, vault, miningLogger)
-    //  async init(web3, subsystem_command, vault, networkInterface, miningLogger)
+    async init(miningLogger)
     {
         process.on('exit', () => {
             miningLogger.print("Process exiting... stopping miner");
             CPPMiner.stop();
         });
 
-        tokenContract = new web3.eth.Contract(tokenContractJSON.abi, vault.getTokenContractAddress());
+        CPPMiner.setHardwareType('cuda')
 
         this.miningLogger = miningLogger;
-        this.vault = vault;
     },
 
-    async mine(subsystem_command, subsystem_option) {
-        if (subsystem_option == 'cuda') {
-            CPPMiner.setHardwareType('cuda');
-        } else if (subsystem_option == 'opencl') {
-            CPPMiner.setHardwareType('opencl');
-        } else {
-            CPPMiner.setHardwareType('cpu');
-        }
-
-        if (this.miningStyle == "solo") {
-            //if solo mining need a full account
-            var eth_account = this.vault.getFullAccount();
-
-            if (eth_account.accountType == "readOnly"
-                || !(eth_account.hasOwnProperty('privateKey')
-                     && (typeof eth_account.privateKey == 'undefined' || eth_account.privateKey != null))) {
-                miningLogger.print("The account", eth_account.address, 'does not have an associated private key. Please select another account or mine to a pool.');
-                return;
-            }
-        } else if (this.miningStyle == "pool") {
-            var eth_account = this.vault.getAccount();
-        }
-
-        if (eth_account == null || eth_account.address == null) {
-            miningLogger.print("Please create a new account with 'account new' before solo mining.")
-            return false;
-        }
-
-        ///this.mining = true;
-        this.minerEthAddress = eth_account.address;
-
+    async mine() {
         let miningParameters = {};
-        await this.collectMiningParameters(this.minerEthAddress, miningParameters, this.miningStyle);
+        await this.collectMiningParameters(miningParameters);
 
-        this.miningLogger.appendToStandardLog("Begin mining for " + this.minerEthAddress + " @ gasprice " + this.vault.getGasPriceGwei());
-
-        process.stdout.write('\x1b[s\x1b[?25l\x1b[3;72f\x1b[38;5;33m' + this.minerEthAddress.slice(0, 8) + '\x1b[0m\x1b[u\x1b[?25h');
-
-        if (this.miningStyle != "pool") {
-            miningLogger.print("Gas price is", this.vault.getGasPriceGwei(), 'gwei');
+        if (!this.mining) {
+            try {
+                // C++ module entry point
+                this.mineCoins(miningParameters);
+            } catch (e) {
+                miningLogger.print(e)
+            }
         }
 
         //keep on looping!
-        setInterval(async() => { await this.collectMiningParameters(this.minerEthAddress, miningParameters, this.miningStyle) }, COLLECT_MINING_PARAMS_TIMEOUT);
+        setInterval(async() => {
+            await this.collectMiningParameters(miningParameters)
+        }, COLLECT_MINING_PARAMS_TIMEOUT);
 
-        setInterval(() => { this.printMiningStats() }, PRINT_STATS_TIMEOUT);
-    },
-
-    mineStuff(miningParameters) {
-        if (!this.mining) {
-            this.mineCoins(this.web3, miningParameters, this.minerEthAddress);
+        let os = require('os');
+        if(oldWindows) {
+            setInterval(() => { this.printMiningStatsBare() }, PRINT_STATS_BARE_TIMEOUT);
+        } else {
+            setInterval(() => { this.printMiningStats() }, PRINT_STATS_TIMEOUT);
+            //setInterval(() => { CPPMiner.printStatus() }, PRINT_STATS_TIMEOUT);
         }
     },
 
-    setMiningStyle(style) {
-        this.miningStyle = style;
-    },
-
-    async collectMiningParameters(minerEthAddress, miningParameters, miningStyle) {
+    async collectMiningParameters(miningParameters) {
         try {
-            if (miningStyle === "pool") {
-                var parameters = await this.networkInterface.collectMiningParameters(minerEthAddress, miningParameters);
-            } else {
-                var parameters = await this.networkInterface.collectMiningParameters();
-            }
+            var parameters = await this.networkInterface.collectMiningParameters(miningParameters);
 
             miningParameters.miningDifficulty = parameters.miningDifficulty;
             miningParameters.challengeNumber = parameters.challengeNumber;
@@ -100,86 +68,45 @@ module.exports = {
             miningParameters.poolEthAddress = parameters.poolEthAddress;
 
             //give data to the c++ addon
-            await this.updateCPUAddonParameters(miningParameters, miningStyle)
+            await this.updateCPUAddonParameters(miningParameters)
         } catch (e) {
             miningLogger.print(e)
         }
     },
 
-    async updateCPUAddonParameters(miningParameters, miningStyle) {
-        let bResume = false;
-
-        if (miningStyle == 'pool' && this.challengeNumber != null) {
-            CPPMiner.setChallengeNumber(this.challengeNumber);
-            bResume = true;
-        }
-
-        if (this.challengeNumber != miningParameters.challengeNumber) {
+    async updateCPUAddonParameters(miningParameters) {
+        if (this.challengeNumber == null || this.challengeNumber != miningParameters.challengeNumber) {
             this.challengeNumber = miningParameters.challengeNumber
 
-            CPPMiner.setChallengeNumber(this.challengeNumber);
-            bResume = true;
-            process.stdout.write("\x1b[s\x1b[?25l\x1b[2;13f\x1b[38;5;34m" + this.challengeNumber.substring(2, 10) +
-                                 "\x1b[0m\x1b[u\x1b[?25h");
+            CPPMiner.setPrefix(this.challengeNumber + miningParameters.poolEthAddress.slice(2));
         }
 
-        if (this.miningTarget == null || !this.miningTarget.eq(miningParameters.miningTarget)) {
+        if (this.miningTarget == null || this.miningTarget != miningParameters.miningTarget) {
             this.miningTarget = miningParameters.miningTarget
 
-            CPPMiner.setDifficultyTarget("0x" + this.miningTarget.toString(16, 64));
+            CPPMiner.setTarget("0x" + this.miningTarget.toString(16, 64));
         }
 
-        if (this.miningDifficulty != miningParameters.miningDifficulty) {
+        if (this.miningDifficulty == null || this.miningDifficulty != miningParameters.miningDifficulty) {
             this.miningDifficulty = miningParameters.miningDifficulty
 
-            process.stdout.write("\x1b[s\x1b[?25l\x1b[3;14f\x1b[38;5;34m" +
-                                 this.miningDifficulty.toString().padEnd(7) +
-                                 "\x1b[0m\x1b[u\x1b[?25h");
+            CPPMiner.setDiff("0x" + this.miningDifficulty);
             // CPPMiner.setDifficulty( parseInt( this.miningTarget.toString(16, 64).substring(0, 16), 16 ) );
         }
-
-        if (bResume && !this.mining) {
-            try {
-                // C++ module entry point
-                this.mineStuff(miningParameters);
-            } catch (e) {
-                miningLogger.print(e)
-            }
-        }
     },
 
-    //async submitNewMinedBlock(addressFrom, solution_number, digest_bytes, challenge_number)
-    submitNewMinedBlock(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty) {
-        this.networkInterface.queueMiningSolution(addressFrom, minerEthAddress, solution_number, digest_bytes, challenge_number, target, difficulty)
-    },
-
-    // contractData , -> miningParameters
-    mineCoins(web3, miningParameters, minerEthAddress) {
-        let target = miningParameters.miningTarget;
-        let difficulty = miningParameters.miningDifficulty;
-
-        let addressFrom;
-
-        if (this.miningStyle == "pool") {
-            addressFrom = miningParameters.poolEthAddress;
-        } else {
-            addressFrom = minerEthAddress;
-        }
-
-        CPPMiner.setMinerAddress(addressFrom);
-
+    mineCoins(miningParameters) {
         const verifyAndSubmit = () => {
             let solution_number = "0x" + CPPMiner.getSolution();
-            if(solution_number == "0x" || web3utils.toBN(solution_number).eq(0)) { return; }
+            if (solution_number == "0x" || web3utils.toBN(solution_number).eq(0)) { return; }
             let challenge_number = miningParameters.challengeNumber;
             let digest = web3utils.soliditySha3(challenge_number,
-                                                addressFrom,
+                                                miningParameters.poolEthAddress,
                                                 solution_number);
             let digestBigNumber = web3utils.toBN(digest);
             if (digestBigNumber.lte(miningParameters.miningTarget)) {
-                //  this.submitNewMinedBlock(minerEthAddress, solution_number, digest, challenge_number);
-                this.submitNewMinedBlock(addressFrom, minerEthAddress, solution_number,
-                                         digest, challenge_number, target, difficulty)
+                this.submitNewMinedBlock(addressFrom, solution_number, digest, challenge_number,
+                                         miningParameters.miningTarget, miningParameters.miningDifficulty)
             //} else {
             //    console.error("Verification failed!\n",
             //                  "challenge:", challenge_number, "\n",
@@ -194,34 +121,116 @@ module.exports = {
 
         this.mining = true;
 
-        debugLogger.log('MINING:', this.mining)
+        startTime = Date.now();
 
-        CPPMiner.run((err, sol) => {
-            if (sol) {
-                try {
-                    verifyAndSubmit(sol);
-                } catch (e) {
-                    miningLogger.print(e)
-                }
-            }
-            this.mining = false;
-
-            debugLogger.log('MINING:', this.mining)
-        });
+        CPPMiner.run(() => {});
     },
 
-    setHardwareType(type) {
-        hardwareType = type;
-        miningLogger.print("Set hardware type:", type)
+    resetHashCounter() {
+        CPPMiner.resetHashCounter();
+
+        startTime = Date.now();
     },
 
     setNetworkInterface(netInterface) {
         this.networkInterface = netInterface;
+        this.submitNewMinedBlock = netInterface.queueMiningSolution;
+        netInterface.setResetCallback( this.resetHashCounter );
     },
 
     printMiningStats() {
-        var hashes = CPPMiner.hashes();
-        //  miningLogger.print('hashes:', hashes )
-        //miningLogger.print('Hash rate: ' + parseInt(hashes / PRINT_STATS_TIMEOUT) + " kH/s");
+        let hashes = "0x" + CPPMiner.getGpuHashes() || 0;
+        let timeDiff = ((Date.now() - startTime) / 1000) || 0.100;
+
+        if(typeof this.avgHashes == 'undefined') {
+            this.avgHashes = (hashes / timeDiff);
+            this.samples = 1;
+        } else {
+            this.samples++;
+            if((this.samples > 600 &&
+                ((hashes/timeDiff) > (1.50 * this.avgHashes) ||
+                 (hashes/timeDiff) < (0.75 * this.avgHashes))) ||
+               (this.samples > 150 &&
+                ((hashes/timeDiff) > (2.50 * this.avgHashes) ||
+                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
+               (this.samples > 50 &&
+                ((hashes/timeDiff) > (3.00 * this.avgHashes) ||
+                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
+               isNaN(hashes))
+            {
+                if(isNaN(hashes)) console.log("wtf")
+                hashes = this.avgHashes * timeDiff;
+            }
+            this.avgHashes -= this.avgHashes / this.samples;
+            this.avgHashes += (hashes / timeDiff) / this.samples;
+        }
+
+        process.stdout.cork();
+        process.stdout.write("\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m" +
+                             (this.avgHashes / 1000000).toFixed(2).toString().padStart(8).slice(-8) +
+                             "\x1b[0m\x1b[3;36f\x1b[38;5;208m" +
+                             (hashes/1).toFixed(0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(25) +
+                             "\x1b[0m\x1b[2;75f\x1b[38;5;33m" +
+                             Math.floor((timeDiff) / 60).toFixed(0).toString().padStart(2, '0') +
+                             ":" +
+                             Math.floor((timeDiff) % 60).toFixed(0).toString().padStart(2, '0') +
+                             "\x1b[0m");
+
+        process.stdout.write("\x1b[2;13f\x1b[38;5;34m" +
+                             this.challengeNumber.substring(2, 10) +
+                             "\x1b[0m");
+
+        process.stdout.write("\x1b[3;14f\x1b[38;5;34m" +
+                             this.miningDifficulty.toString().padEnd(7) +
+                             "\x1b[0m");
+
+        process.stdout.write("\x1b[3;22f\x1b[38;5;221m" +
+                             this.networkInterface.getSolutionCount().toString().padStart(8) +
+                             "\x1b[0m");
+
+        process.stdout.write('\x1b[3;72f\x1b[38;5;33m' +
+                             jsConfig.address.slice(0, 8) +
+                             '\x1b[0m\x1b[u\x1b[?25h');
+        process.stdout.uncork();
+    },
+
+    printMiningStatsBare() {
+        let hashes = "0x" + CPPMiner.getGpuHashes();
+        let timeDiff = ((Date.now() - startTime) / 1000.0) || 0.100;
+        if(typeof this.avgHashes == 'undefined') {
+            this.avgHashes = (hashes / timeDiff);
+            this.samples = 1;
+        } else {
+            this.samples++;
+            if((this.samples > 600 &&
+                ((hashes/timeDiff) > (1.50 * this.avgHashes) ||
+                 (hashes/timeDiff) < (0.75 * this.avgHashes))) ||
+               (this.samples > 150 &&
+                ((hashes/timeDiff) > (2.50 * this.avgHashes) ||
+                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
+               (this.samples > 50 &&
+                ((hashes/timeDiff) > (3.00 * this.avgHashes) ||
+                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
+               isNaN(hashes))
+            {
+                if(isNaN(hashes)) console.log("wtf")
+                hashes = this.avgHashes * timeDiff;
+            }
+            this.avgHashes -= this.avgHashes / this.samples;
+            this.avgHashes += (hashes / timeDiff) / this.samples;
+        }
+
+        miningLogger.print(/*'Raw Hashes:',
+                           (hashes/1).toFixed(0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(16),
+                           'Hash rate:',*/
+                           (this.avgHashes / 1000000).toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(10).slice(-10),
+                           "MH/s  Sols:",
+                           this.networkInterface.getSolutionCount().toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(6)
+                           + (newSolution ? '^' : ' '),
+                           "Search time:",
+                           Math.floor((timeDiff) / 60).toFixed(0).toString().padStart(2, '0') +
+                           ":" +
+                           Math.floor((timeDiff) % 60).toFixed(0).toString().padStart(2, '0'));
+        newSolution = false;
     }
 }

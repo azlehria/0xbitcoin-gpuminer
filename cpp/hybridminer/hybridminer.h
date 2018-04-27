@@ -8,49 +8,39 @@
 
 #include "cpusolver.h"
 #include "cudasolver.h"
+#include "miner_state.h"
 
 #include <chrono>
 #include <random>
 #include <thread>
 #include <string>
+#include <cuda_runtime.h>
 
 class HybridMiner
 {
 public:
-  std::string solution() const;
-  std::string getSolution();
-
   HybridMiner() noexcept;
   ~HybridMiner();
 
-  void setChallengeNumber( std::string const& challengeNumber );
-  void setDifficultyTarget( std::string const& difficultyTarget );
-  void setMinerAddress( std::string const& minerAddress );
-  void setHardwareType( std::string const& hardwareType );
+  auto setHardwareType( std::string const& hardwareType ) -> void;
+  auto updateTarget() const -> void;
+  auto updateMessage() const -> void;
 
-  void run();
-  void stop();
+  auto run() -> void;
+  auto stop() -> void;
 
 private:
-  void thr_func( CPUSolver& solver );
-  void solutionFound( CPUSolver::bytes_t const& solution );
-
   //set a var in the solver !!
-  void set( void ( CPUSolver::*fn )( std::string const& ), std::string const& p );
+  // void set( void ( CPUSolver::*fn )( std::string const& ), std::string const& p ) const -> void;
+  auto set( void ( CUDASolver::*fn )() ) const -> void;
 
-  bool isUsingCuda();
+  auto isUsingCuda() const -> bool;
 
-  std::vector<CPUSolver> m_solvers;
+  std::vector<std::unique_ptr<CPUSolver>> m_solvers;
+  std::vector<std::unique_ptr<CUDASolver>> cudaSolvers;
   std::vector<std::thread> m_threads;
 
-  CUDASolver cudaSolver;
-  std::mutex m_solution_mutex;
-  CPUSolver::bytes_t m_solution; //make one for GPU ?
-
-//  GPUSolver gpuSolver;
-  bool m_bSolutionFound;
   std::string m_hardwareType;
-  volatile bool m_bExit;
 };
 
 #endif // ! _CPUMINER_H_

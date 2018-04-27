@@ -11,32 +11,10 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
  */
 
 #include "cuda_sha3.h"
+#include "cudasolver.h"
 
-int32_t intensity;
-int32_t cuda_device;
-int32_t clock_speed;
-int32_t compute_version;
-struct timeb start, end;
-
-uint64_t cnt;
-uint64_t printable_hashrate_cnt;
-uint64_t print_counter;
-
-bool gpu_initialized;
-bool new_input;
-
-uint8_t solution[32] = { 0 };
-
-uint64_t* h_message;
-uint8_t init_message[84];
-
-uint64_t* d_solution;
-
-uint8_t* d_challenge;
-uint8_t* d_hash_prefix;
 __constant__ uint64_t d_mid[25];
 __constant__ uint64_t d_target;
-__constant__ uint32_t threads;
 
 __device__ __constant__ const uint64_t RC[24] = {
   0x0000000000000001, 0x0000000000008082, 0x800000000000808a,
@@ -50,51 +28,63 @@ __device__ __constant__ const uint64_t RC[24] = {
 };
 
 __device__ __forceinline__
-uint64_t bswap_64( uint64_t input )
+auto bswap_64( uint64_t input ) -> uint64_t
 {
-  uint64_t output{ 0 };
+  uint64_t output;
   asm( "{"
        "  prmt.b32 %0, %3, 0, 0x0123;"
        "  prmt.b32 %1, %2, 0, 0x0123;"
-       "}" : "=r"(((uint2&)output).x), "=r"(((uint2&)output).y) : "r"(((uint2&)input).x), "r"(((uint2&)input).y) );
+       "}" : "=r"(reinterpret_cast<uint2&>(output).x), "=r"(reinterpret_cast<uint2&>(output).y)
+           : "r"(reinterpret_cast<uint2&>(input).x), "r"(reinterpret_cast<uint2&>(input).y) );
   return output;
 }
 
 __device__ __forceinline__
-uint64_t xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e )
+auto xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e ) -> uint64_t
 {
-  uint64_t output{ 0 };
+  uint64_t output;
   asm( "{"
        "  xor.b64 %0, %1, %2;"
        "  xor.b64 %0, %0, %3;"
        "  xor.b64 %0, %0, %4;"
        "  xor.b64 %0, %0, %5;"
-       "}" : "+l"(output) : "l"(a), "l"(b), "l"(c), "l"(d), "l"(e) );
+       "}" : "=l"(output) : "l"(a), "l"(b), "l"(c), "l"(d), "l"(e) );
   return output;
 }
 
 __device__ __forceinline__
-uint64_t xor3( uint64_t a, uint64_t b, uint64_t c )
+auto xor3( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
 {
-  uint64_t output{ 0 };
+  uint64_t output;
+#if __CUDA_ARCH__ >= 500
+  asm( "{"
+       "  lop3.b32 %0, %2, %4, %6, 0x96;"
+       "  lop3.b32 %1, %3, %5, %7, 0x96;"
+       "}" : "=r"(reinterpret_cast<uint2&>(output).x), "=r"(reinterpret_cast<uint2&>(output).y)
+           : "r"(reinterpret_cast<uint2&>(a).x), "r"(reinterpret_cast<uint2&>(a).y),
+             "r"(reinterpret_cast<uint2&>(b).x), "r"(reinterpret_cast<uint2&>(b).y),
+             "r"(reinterpret_cast<uint2&>(c).x), "r"(reinterpret_cast<uint2&>(c).y) );
+#else
   asm( "{"
        "  xor.b64 %0, %1, %2;"
        "  xor.b64 %0, %0, %3;"
-       "}" : "+l"(output) : "l"(a), "l"(b), "l"(c) );
+       "}" : "=l"(output) : "l"(a), "l"(b), "l"(c) );
+#endif
   return output;
 }
 
 __device__ __forceinline__
-uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
+auto chi( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
 {
 #if __CUDA_ARCH__ >= 500
-  uint64_t output{ 0 };
+  uint64_t output;
   asm( "{"
-       "  lop3.b32 %0, %2, %3, %4, 0xD2;"
-       "  lop3.b32 %1, %5, %6, %7, 0xD2;"
-       "}" : "=r"(((uint2&)output).x), "=r"(((uint2&)output).y)
-           : "r"(((uint2&)a).x), "r"(((uint2&)b).x), "r"(((uint2&)c).x),
-             "r"(((uint2&)a).y), "r"(((uint2&)b).y), "r"(((uint2&)c).y) );
+       "  lop3.b32 %0, %2, %4, %6, 0xD2;"
+       "  lop3.b32 %1, %3, %5, %7, 0xD2;"
+       "}" : "=r"(reinterpret_cast<uint2&>(output).x), "=r"(reinterpret_cast<uint2&>(output).y)
+           : "r"(reinterpret_cast<uint2&>(a).x), "r"(reinterpret_cast<uint2&>(a).y),
+             "r"(reinterpret_cast<uint2&>(b).x), "r"(reinterpret_cast<uint2&>(b).y),
+             "r"(reinterpret_cast<uint2&>(c).x), "r"(reinterpret_cast<uint2&>(c).y) );
   return output;
 #else
   return a ^ ((~b) & c);
@@ -102,64 +92,89 @@ uint64_t chi( uint64_t a, uint64_t b, uint64_t c )
 }
 
 __device__
-bool keccak( uint64_t nounce )
+auto keccak( uint64_t nounce ) -> bool
 {
   uint64_t state[25], C[5], D[5];
+  uint64_t n[11] { ROTL64(nounce,  7) };
+  n[ 1] = ROTL64(n[ 0],  1);
+  n[ 2] = ROTL64(n[ 1],  6);
+  n[ 3] = ROTL64(n[ 2],  2);
+  n[ 4] = ROTL64(n[ 3],  4);
+  n[ 5] = ROTL64(n[ 4],  7);
+  n[ 6] = ROTL64(n[ 5], 12);
+  n[ 7] = ROTL64(n[ 6],  5);
+  n[ 8] = ROTL64(n[ 7], 11);
+  n[ 9] = ROTL64(n[ 8],  7);
+  n[10] = ROTL64(n[ 9],  1);
 
-  C[0] = d_mid[ 2] ^ ROTR64(nounce, 20);
-  C[1] = d_mid[ 4] ^ ROTL64(nounce, 14);
-  state[ 0] = chi( d_mid[ 0], d_mid[ 1], C[ 0] ) ^ RC[0];
-  state[ 1] = chi( d_mid[ 1], C[ 0], d_mid[ 3] );
-  state[ 2] = chi( C[ 0], d_mid[ 3], C[ 1] );
-  state[ 3] = chi( d_mid[ 3], C[ 1], d_mid[ 0] );
-  state[ 4] = chi( C[ 1], d_mid[ 0], d_mid[ 1] );
+  C[0] = d_mid[ 0];
+  C[1] = d_mid[ 1];
+  C[2] = d_mid[ 2] ^ n[ 7];
+  C[3] = d_mid[ 3];
+  C[4] = d_mid[ 4] ^ n[ 2];
+  state[ 0] = chi( C[0], C[1], C[2] ) ^ RC[0];
+  state[ 1] = chi( C[1], C[2], C[3] );
+  state[ 2] = chi( C[2], C[3], C[4] );
+  state[ 3] = chi( C[3], C[4], C[0] );
+  state[ 4] = chi( C[4], C[0], C[1] );
 
-  C[0] = d_mid[ 6] ^ ROTL64(nounce, 20);
-  C[1] = d_mid[ 9] ^ ROTR64(nounce,  2);
-  state[ 5] = chi( d_mid[ 5], C[ 0], d_mid[7] );
-  state[ 6] = chi( C[0], d_mid[ 7], d_mid[8] );
-  state[ 7] = chi( d_mid[ 7], d_mid[ 8], C[1] );
-  state[ 8] = chi( d_mid[ 8], C[1], d_mid[5] );
-  state[ 9] = chi( C[1], d_mid[ 5], C[0] );
+  C[0] = d_mid[ 5];
+  C[1] = d_mid[ 6] ^ n[ 4];
+  C[2] = d_mid[ 7];
+  C[3] = d_mid[ 8];
+  C[4] = d_mid[ 9] ^ n[ 9];
+  state[ 5] = chi( C[0], C[1], C[2] );
+  state[ 6] = chi( C[1], C[2], C[3] );
+  state[ 7] = chi( C[2], C[3], C[4] );
+  state[ 8] = chi( C[3], C[4], C[0] );
+  state[ 9] = chi( C[4], C[0], C[1] );
 
-  C[0] = d_mid[11] ^ ROTL64(nounce, 7);
-  C[1] = d_mid[13] ^ ROTL64(nounce, 8);
-  state[10] = chi( d_mid[10], C[0], d_mid[12] );
-  state[11] = chi( C[0], d_mid[12], C[1] );
-  state[12] = chi( d_mid[12], C[1], d_mid[14] );
-  state[13] = chi( C[1], d_mid[14], d_mid[10] );
-  state[14] = chi( d_mid[14], d_mid[10], C[0] );
+  C[0] = d_mid[10];
+  C[1] = d_mid[11] ^ n[ 0];
+  C[2] = d_mid[12];
+  C[3] = d_mid[13] ^ n[ 1];
+  C[4] = d_mid[14];
+  state[10] = chi( C[0], C[1], C[2] );
+  state[11] = chi( C[1], C[2], C[3] );
+  state[12] = chi( C[2], C[3], C[4] );
+  state[13] = chi( C[3], C[4], C[0] );
+  state[14] = chi( C[4], C[0], C[1] );
 
-  C[0] = d_mid[15] ^ ROTL64(nounce, 27);
-  C[1] = d_mid[18] ^ ROTL64(nounce, 16);
-  state[15] = chi( C[0], d_mid[16], d_mid[17] );
-  state[16] = chi( d_mid[16], d_mid[17], C[1] );
-  state[17] = chi( d_mid[17], C[1], d_mid[19] );
-  state[18] = chi( C[1], d_mid[19], C[0] );
-  state[19] = chi( d_mid[19], C[0], d_mid[16] );
+  C[0] = d_mid[15] ^ n[ 5];
+  C[1] = d_mid[16];
+  C[2] = d_mid[17];
+  C[3] = d_mid[18] ^ n[ 3];
+  C[4] = d_mid[19];
+  state[15] = chi( C[0], C[1], C[2] );
+  state[16] = chi( C[1], C[2], C[3] );
+  state[17] = chi( C[2], C[3], C[4] );
+  state[18] = chi( C[3], C[4], C[0] );
+  state[19] = chi( C[4], C[0], C[1] );
 
-  C[0] = d_mid[20] ^ ROTR64(nounce,  1);
-  C[1] = d_mid[21] ^ ROTR64(nounce,  9);
-  C[2] = d_mid[22] ^ ROTR64(nounce, 25);
+  C[0] = d_mid[20] ^ n[10];
+  C[1] = d_mid[21] ^ n[ 8];
+  C[2] = d_mid[22] ^ n[ 6];
+  C[3] = d_mid[23];
+  C[4] = d_mid[24];
   state[20] = chi( C[0], C[1], C[2] );
-  state[21] = chi( C[1], C[2], d_mid[23] );
-  state[22] = chi( C[2], d_mid[23], d_mid[24] );
-  state[23] = chi( d_mid[23], d_mid[24], C[0] );
-  state[24] = chi( d_mid[24], C[0], C[1] );
+  state[21] = chi( C[1], C[2], C[3] );
+  state[22] = chi( C[2], C[3], C[4] );
+  state[23] = chi( C[3], C[4], C[0] );
+  state[24] = chi( C[4], C[0], C[1] );
 
 #if __CUDA_ARCH__ >= 350
 #  pragma unroll
 #endif
-  for( int32_t i{ 1 }; i < 23; ++i )
+  for( uint_fast8_t i{ 1 }; i < 23; ++i )
   {
     // Theta
-    for( uint32_t x{ 0 }; x < 5; ++x )
+    for( uint_fast8_t x{ 0 }; x < 5; ++x )
     {
       C[(x + 6) % 5] = xor5( state[x], state[x + 5], state[x + 10], state[x + 15], state[x + 20] );
     }
 
 #if __CUDA_ARCH__ >= 350
-    for( uint32_t x{ 0 }; x < 5; ++x )
+    for( uint_fast8_t x{ 0 }; x < 5; ++x )
     {
 			D[x] = ROTL64(C[(x + 2) % 5], 1);
       state[x]      = xor3( state[x]     , D[x], C[x] );
@@ -169,7 +184,7 @@ bool keccak( uint64_t nounce )
       state[x + 20] = xor3( state[x + 20], D[x], C[x] );
     }
 #else
-    for( uint32_t x{ 0 }; x < 5; ++x )
+    for( uint_fast8_t x{ 0 }; x < 5; ++x )
     {
       D[x] = ROTL64(C[(x + 2) % 5], 1) ^ C[x];
       state[x]      = state[x]      ^ D[x];
@@ -208,7 +223,7 @@ bool keccak( uint64_t nounce )
     state[10] = ROTL64( C[0], 1 );
 
     // Chi
-    for( uint32_t x{ 0 }; x < 25; x += 5 )
+    for( uint_fast8_t x{ 0 }; x < 25; x += 5 )
     {
       C[0] = state[x];
       C[1] = state[x + 1];
@@ -226,7 +241,7 @@ bool keccak( uint64_t nounce )
     state[0] = state[0] ^ RC[i];
   }
 
-  for( uint32_t x{ 0 }; x < 5; ++x )
+  for( uint_fast8_t x{ 0 }; x < 5; ++x )
   {
     C[(x + 6) % 5 ] = xor5( state[x], state[x + 5], state[x + 10], state[x + 15], state[x + 20] );
   }
@@ -236,8 +251,10 @@ bool keccak( uint64_t nounce )
   D[2] = ROTL64(C[4], 1);
 
   state[ 0] = xor3( state[ 0], D[0], C[0] );
-  state[ 6] = ROTR64(xor3( state[ 6], D[1], C[1] ), 20);
-  state[12] = ROTR64(xor3( state[12], D[2], C[2] ), 21);
+  state[ 6] = xor3( state[ 6], D[1], C[1] );
+  state[12] = xor3( state[12], D[2], C[2] );
+  state[ 6] = ROTR64(state[ 6], 20);
+  state[12] = ROTR64(state[12], 21);
 
   state[ 0] = chi( state[ 0], state[ 6], state[12] ) ^ RC[23];
 
@@ -245,226 +262,115 @@ bool keccak( uint64_t nounce )
 }
 
 KERNEL_LAUNCH_PARAMS
-void gpu_mine( uint64_t* solution, uint64_t cnt )
+void cuda_mine( uint64_t* __restrict__ solution, const uint64_t cnt )
 {
   uint64_t nounce{ cnt + (blockDim.x * blockIdx.x + threadIdx.x) };
 
   if( keccak( nounce ) )
   {
-    *solution = nounce;
-    return;
+    atomicCAS( solution, UINT64_MAX, nounce );
   }
 }
 
-__host__
-void stop_solving()
+// --------------------------------------------------------------------
+
+auto CUDASolver::cudaInit() -> void
 {
-  // h_done[0] = -2;
-}
+  cudaSetDevice( m_device );
 
-__host__
-uint64_t getHashCount()
-{
-  return cnt;
-}
-
-__host__
-void resetHashCount()
-{
-  cudaSetDevice( cuda_device );
-
-  *h_message = UINT64_MAX;
-  cudaMemcpy( d_solution, h_message, sizeof( uint64_t ), cudaMemcpyHostToDevice );
-
-  printable_hashrate_cnt = 0;
-  print_counter = 0;
-
-  ftime( &start );
-}
-
-__host__
-void send_to_device( uint64_t target, uint64_t* message )
-{
-  cudaSetDevice( cuda_device );
-
-  uint64_t C[4], D[5], mid[25];
-  C[0] = message[0] ^ message[5] ^ message[10] ^ 0x100000000ull;
-  C[1] = message[1] ^ message[6] ^ 0x8000000000000000ull;
-  C[2] = message[2] ^ message[7];
-  C[3] = message[4] ^ message[9];
-
-  D[0] = ROTL64(C[1], 1) ^ C[3];
-  D[1] = ROTL64(C[2], 1) ^ C[0];
-  D[2] = ROTL64(message[3], 1) ^ C[1];
-  D[3] = ROTL64(C[3], 1) ^ C[2];
-  D[4] = ROTL64(C[0], 1) ^ message[3];
-
-  mid[ 0] = message[ 0] ^ D[0];
-  mid[ 1] = ROTL64( message[6] ^ D[1], 44 );
-  mid[ 2] = ROTL64(D[2], 43);
-  mid[ 3] = ROTL64(D[3], 21);
-  mid[ 4] = ROTL64(D[4], 14);
-  mid[ 5] = ROTL64( message[3] ^ D[3], 28 );
-  mid[ 6] = ROTL64( message[9] ^ D[4], 20 );
-  mid[ 7] = ROTL64( message[10] ^ D[0] ^ 0x100000000ull, 3 );
-  mid[ 8] = ROTL64( 0x8000000000000000ull ^ D[1], 45 );
-  mid[ 9] = ROTL64(D[2], 61);
-  mid[10] = ROTL64( message[1] ^ D[1],  1 );
-  mid[11] = ROTL64( message[7] ^ D[2],  6 );
-  mid[12] = ROTL64(D[3], 25);
-  mid[13] = ROTL64(D[4],  8);
-  mid[14] = ROTL64(D[0], 18);
-  mid[15] = ROTL64( message[4] ^ D[4], 27 );
-  mid[16] = ROTL64( message[5] ^ D[0], 36 );
-  mid[17] = ROTL64(D[1], 10);
-  mid[18] = ROTL64(D[2], 15);
-  mid[19] = ROTL64(D[3], 56);
-  mid[20] = ROTL64( message[2] ^ D[2], 62 );
-  mid[21] = ROTL64(D[3], 55);
-  mid[22] = ROTL64(D[4], 39);
-  mid[23] = ROTL64(D[0], 41);
-  mid[24] = ROTL64(D[1],  2);
-
-  cudaMemcpyToSymbol( d_mid, mid, sizeof( mid ), 0, cudaMemcpyHostToDevice);
-
-  cudaMemcpyToSymbol( d_target, &target, sizeof( target ), 0, cudaMemcpyHostToDevice);
-}
-
-/**
- * Initializes the global variables by calling the cudaGetDeviceProperties().
- */
-__host__
-void gpu_init()
-{
   cudaDeviceProp device_prop;
-  int32_t device_count;
-
-  char config[10];
-  FILE * inf;
-  inf = fopen( "0xbtc.conf", "r" );
-  if( inf )
-  {
-    fgets( config, 10, inf );
-    fclose( inf );
-    intensity = atol( strtok( config, " " ) );
-    cuda_device = atol( strtok( NULL, " " ) );
-  }
-  else
-  {
-    intensity = INTENSITY;
-    cuda_device = CUDA_DEVICE;
-  }
-
-  cudaGetDeviceCount( &device_count );
-
-  if( cudaGetDeviceProperties( &device_prop, cuda_device ) != cudaSuccess )
+  if( cudaGetDeviceProperties( &device_prop, m_device ) != cudaSuccess )
   {
     printf( "Problem getting properties for device, exiting...\n" );
     exit( EXIT_FAILURE );
   }
+  int32_t compute_version = device_prop.major * 100 + device_prop.minor * 10;
 
-  cudaSetDevice( cuda_device );
+  m_block.x = compute_version > 500 ? TPB50 : TPB35;
+  m_grid.x = (m_threads + m_block.x - 1) / m_block.x;
 
-  if( !gpu_initialized )
+  if( !m_gpu_initialized )
   {
     // CPU usage goes _insane_ without this.
     cudaDeviceReset();
-    cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync | cudaDeviceLmemResizeToMax );
-    cudaDeviceSetCacheConfig( cudaFuncCachePreferL1 );
+    // so we don't actually _use_ L1 or local memory . . .
+    cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync /*| cudaDeviceLmemResizeToMax );
+    cudaDeviceSetCacheConfig( cudaFuncCachePreferL1*/ );
 
-    cudaMalloc( (void**)&d_solution, sizeof( uint64_t ) ); // solution
-    cudaMallocHost( (void**)&h_message, sizeof( uint64_t ) );
+    cudaMalloc( reinterpret_cast<void**>(&d_solution), 8 );
+    cudaMallocHost( reinterpret_cast<void**>(&h_solution), 8 );
 
-    (uint32_t&)(init_message[52]) = 014533075101u;
-    (uint32_t&)(init_message[56]) = 014132271150u;
+    cudaResetSolution();
 
-    srand((time(NULL) & 0xFFFF) | (getpid() << 16));
-    for(int8_t i_rand{ 60 }; i_rand < 84; ++i_rand){
-      init_message[i_rand] = (uint8_t)rand() % 256;
-    }
-    memcpy( solution, &init_message[52], 32 );
-
-    uint32_t h_threads{ 1u << intensity };
-    cudaMemcpyToSymbol( threads, &h_threads, sizeof( h_threads ), 0, cudaMemcpyHostToDevice );
-
-    gpu_initialized = true;
+    m_gpu_initialized = true;
   }
-
-  compute_version = device_prop.major * 100 + device_prop.minor * 10;
-
-  // convert from GHz to hertz
-  clock_speed = (int32_t)( device_prop.memoryClockRate * 1000 * 1000 );
-
-  //cnt = 0;
-  printable_hashrate_cnt = 0;
-  print_counter = 0;
-
-  ftime( &start );
-  if( new_input ) new_input = false;
 }
 
-__host__
-void update_mining_inputs( uint64_t target, uint8_t* hash_prefix )
+auto CUDASolver::cudaCleanup() -> void
 {
-  memcpy( init_message, hash_prefix, 52 );
-  send_to_device( target, (uint64_t*)init_message );
-}
-
-__host__
-void gpu_cleanup()
-{
-  cudaSetDevice( cuda_device );
+  cudaSetDevice( m_device );
 
   cudaThreadSynchronize();
 
   cudaFree( d_solution );
-  cudaFreeHost( h_message );
+  cudaFreeHost( h_solution );
 
   cudaDeviceReset();
+
+  m_gpu_initialized = false;
 }
 
-__host__
-bool find_message()
+auto CUDASolver::cudaResetSolution() -> void
 {
-  cudaSetDevice( cuda_device );
+  cudaSetDevice( m_device );
 
-  uint32_t threads{ 1u << intensity };
+  *h_solution = UINT64_MAX;
+  cudaMemcpy( d_solution, h_solution, 8, cudaMemcpyHostToDevice );
+}
 
-  uint32_t tpb{ compute_version > 500 ? TPB50 : TPB35 };
-  dim3 grid{ (threads + tpb - 1) / tpb };
-  dim3 block{ tpb };
+auto CUDASolver::pushTarget() -> void
+{
+  cudaSetDevice( m_device );
 
-  gpu_mine <<< grid, block >>> ( d_solution, cnt );
-  // cudaError_t cudaerr = cudaDeviceSynchronize();
-  // if( cudaerr != cudaSuccess )
-  // {
-  //  printf( "kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n", cudaerr, cudaGetErrorString( cudaerr ) );
-  //  exit( EXIT_FAILURE );
-  // }
+  uint64_t target{ MinerState::getTarget() };
+  cudaMemcpyToSymbol( d_target, &target, 8, 0, cudaMemcpyHostToDevice);
+}
 
-  cnt += threads;
-  printable_hashrate_cnt += threads;
+auto CUDASolver::pushMessage() -> void
+{
+  cudaSetDevice( m_device );
 
-  cudaMemcpy( h_message, d_solution, sizeof( uint64_t ), cudaMemcpyDeviceToHost );
-  if( *h_message != UINT64_MAX )
-    memcpy( &solution[12], h_message, sizeof( uint64_t ) );
+  uint64_t message[25];
+  MinerState::getMidstate( message, m_device );
+  cudaMemcpyToSymbol( d_mid, message, 200, 0, cudaMemcpyHostToDevice);
+}
 
-  ftime( &end );
-  double t{ (double)((end.time * 1000 + end.millitm) - (start.time * 1000 + start.millitm)) / 1000 };
+auto CUDASolver::findSolution() -> void
+{
+  cudaInit();
 
-  if( t*10 > print_counter )
+  cudaSetDevice( m_device );
+
+  do
   {
-    ++print_counter;
+    if( m_new_target ) { pushTarget(); }
+    if( m_new_message ) { pushMessage(); }
 
-    // maybe breaking the control codes into macros is a good idea . . .
-    printf( "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m%*.2f\x1b[0m\x1b[u\x1b[?25h"
-            "\x1b[s\x1b[?25l\x1b[3;36f\x1b[38;5;208m%*" PRIu64 "\x1b[0m\x1b[u\x1b[?25h"
-            "\x1b[s\x1b[?25l\x1b[2;75f\x1b[38;5;33m%02u:%02u\x1b[0m\x1b[u\x1b[?25h",
-            8, ( (double)printable_hashrate_cnt / t / 1000000 ),
-            25, printable_hashrate_cnt,
-            ((uint32_t)t/60), ((uint32_t)t%60) );
-  }
+    cuda_mine <<< m_grid, m_block >>> ( d_solution, MinerState::getIncSearchSpace( m_threads ) );
+    // tiny bit slower (~0.1%) and clears errors. whatever.
+    cudaError_t cudaerr = cudaDeviceSynchronize();
+    if( cudaerr != cudaSuccess )
+    {
+      printf( "kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n", cudaerr, cudaGetErrorString( cudaerr ) );
+      exit( EXIT_FAILURE );
+    }
 
-  return ( *h_message != UINT64_MAX );
-  // return ( h_done[0] >= 0 );
+    cudaMemcpy( h_solution, d_solution, 8, cudaMemcpyDeviceToHost );
+
+    if( *h_solution != UINT64_MAX )
+    {
+      MinerState::pushSolution( *h_solution );
+      cudaResetSolution();
+    }
+  } while( !m_stop );
 }

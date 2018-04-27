@@ -1,63 +1,55 @@
 #ifndef _CUDASOLVER_H_
 #define _CUDASOLVER_H_
 
-#include <cassert>
-#include <sstream>
-#include <iomanip>
+// default magic numbers
+#define INTENSITY 23
+#define CUDA_DEVICE 0
+// default magic numbers
+
+#include "miner_state.h"
+
+#include <cuda_runtime.h>
 #include <atomic>
-#include <mutex>
 #include <string>
-#include <vector>
-#include <queue>
 
 class CUDASolver
 {
 public:
-  static std::atomic<uint32_t> hashes;
-  typedef std::vector<uint8_t> bytes_t;
-
-  static const unsigned short ADDRESS_LENGTH = 20u;
-  static const unsigned short UINT256_LENGTH = 32u;
-
-  CUDASolver() noexcept;
+  CUDASolver() = delete;
+  CUDASolver( int32_t device, int32_t intensity ) noexcept;
   ~CUDASolver();
 
-  void setAddress( std::string const& addr );
-  void setChallenge( std::string const& chal );
-  // void setDifficulty( uint64_t const& diff );
-  void setTarget( std::string const& target );
+  auto findSolution() -> void;
+  auto stopFinding() -> void;
 
-  void init();
-
-  void findSolution();
-  void stopFinding();
-
-  static void hexToBytes( std::string const& hex, bytes_t& bytes );
-  static std::string bytesToString( bytes_t const& buffer );
-  static std::string hexStr( char* data, int32_t len );
-
-  bool requiresRestart();
-
-  static std::string getSolution();
+  auto updateTarget() -> void;
+  auto updateMessage() -> void;
 
 private:
-  //void updateBuffer();
+  auto updateGPULoop() -> void;
 
-  void updateGPULoop( bool force_update = false );
+  auto pushTarget() -> void;
+  auto pushMessage() -> void;
 
-  static void pushSolution( std::string sol );
+  auto cudaInit() -> void;
+  auto cudaCleanup() -> void;
 
-  std::string s_challenge;
-  std::string s_target;
-  bytes_t m_address;
-  bytes_t m_challenge;
-  std::atomic<uint64_t> m_target;
-  std::atomic<bool> m_target_ready;
+  auto cudaResetSolution() -> void;
 
-  std::atomic<bool> m_updated_gpu_inputs;
+  std::atomic<bool> m_stop;
+  std::atomic<bool> m_new_target;
+  std::atomic<bool> m_new_message;
 
-  static std::mutex m_solutions_mutex;
-  static std::queue<std::string> m_solutions_queue;
+  uint32_t m_threads;
+  int32_t m_device_id;
+
+  bool m_gpu_initialized;
+  int32_t m_device;
+  uint64_t* h_solution;
+  uint64_t* d_solution;
+
+  dim3 m_grid;
+  dim3 m_block;
 };
 
-#endif // !_SOLVER_H_
+#endif // !_CUDASOLVER_H_

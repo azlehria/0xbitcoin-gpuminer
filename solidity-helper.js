@@ -1,3 +1,5 @@
+'use strict';
+
 var web3utils = require('web3-utils');
 
 module.exports = {
