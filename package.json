@@ -1,6 +1,6 @@
 {
   "name": "0xbitcoin-miner",
-  "version": "2.10.0-gaiden",
+  "version": "2.10.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/azlehria/0xbitcoin-gpuminer.git"

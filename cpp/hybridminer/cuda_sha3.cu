@@ -367,8 +367,27 @@ auto CUDASolver::findSolution() -> void
     cudaError_t cudaerr = cudaDeviceSynchronize();
     if( cudaerr != cudaSuccess )
     {
-      printf( "kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n", cudaerr, cudaGetErrorString( cudaerr ) );
-      exit( EXIT_FAILURE );
+      printf( "Kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n",
+              cudaerr,
+              cudaGetErrorString( cudaerr ) );
+
+      ++m_device_failure_count;
+
+      if( m_device_failure_count >= 3 )
+      {
+        printf( "Kernel launch has failed %u times. Exiting.",
+                m_device_failure_count );
+        exit( EXIT_FAILURE );
+      }
+
+      --m_intensity;
+      printf( "Reducing intensity to %d and restarting.",
+              (m_intensity) );
+      cudaCleanup();
+      cudaInit();
+      m_new_target = true;
+      m_new_message = true;
+      continue;
     }
 
     cudaMemcpy( h_solution, d_solution, 8, cudaMemcpyDeviceToHost );

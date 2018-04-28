@@ -1,12 +1,9 @@
 'use strict';
 
 const Miner = require("./0xbitcoinminer-accel");
-const miningLogger = require("./lib/mining-logger");
 var prompt = require('prompt');
 var pjson = require('./package.json');
 var PoolInterface = require("./lib/pool-interface");
-
-var running = true;
 
 init();
 
@@ -22,12 +19,12 @@ function init() {
 
     if (!jsConfig)
     {
-        miningLogger('Configuration file missing.');
+        console.print('Configuration file missing.');
         process.exit(1);
     }
-    if (!jsConfig.hasOwnProperty('address') || !jsConfig.hasOwnProperty('pool') || !jsConfig.hasOwnProperty('cuda'))
+    if (!jsConfig.hasOwnProperty('address') || !jsConfig.hasOwnProperty('pool'))
     {
-        miningLogger('Faulty configuration file.');
+        console.print('Faulty configuration file.');
         process.exit(1);
     }
     initSignalHandlers();
@@ -107,9 +104,9 @@ async function handleCommand(command) {
     var subsystem_name = command[0];
 
     if (subsystem_name == 'pool') {
-        await PoolInterface.init(miningLogger);
+        await PoolInterface.init();
 
-        Miner.init(miningLogger);
+        Miner.init();
         Miner.setNetworkInterface(PoolInterface);
         Miner.mine()
     }

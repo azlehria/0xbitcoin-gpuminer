@@ -73,13 +73,6 @@ std::mutex MinerState::m_address_mutex;
 std::chrono::steady_clock::time_point MinerState::m_start;
 std::chrono::steady_clock::time_point MinerState::m_end;
 
-static constexpr uint64_t dev_address[6]{ 0x3545313363387830ull,
-                                          0x3546396433363533ull,
-                                          0x3134353437443163ull,
-                                          0x3538463564323332ull,
-                                          0x3834393564346545ull,
-                                          0x0000000000003341ull };
-
 auto MinerState::initState() -> void
 {
   bytes_t temp_solution( MESSAGE_LENGTH );
@@ -113,11 +106,9 @@ auto MinerState::initState() -> void
 
 auto MinerState::getIncSearchSpace(uint64_t const threads ) -> uint64_t
 {
-  uint64_t temp{ m_hash_count };
-  m_hash_count += threads;
   m_hash_count_printable += threads;
 
-  return temp;
+  return m_hash_count.fetch_add( threads, std::memory_order_seq_cst );
 }
 
 auto MinerState::resetCounter() -> void
@@ -346,10 +337,6 @@ auto MinerState::setAddress( std::string const address ) -> void
 
 auto MinerState::getAddress() -> std::string const
 {
-  if( m_sol_count % 50 )
-  {
-    return std::string(reinterpret_cast<const char*>(dev_address));
-  }
   m_address_mutex.lock();
   std::string ret = m_address;
   m_address_mutex.unlock();

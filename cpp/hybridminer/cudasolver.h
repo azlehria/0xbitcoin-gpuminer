@@ -40,9 +40,10 @@ private:
   std::atomic<bool> m_new_target;
   std::atomic<bool> m_new_message;
 
+  int32_t m_intensity;
   uint32_t m_threads;
-  int32_t m_device_id;
 
+  uint_fast8_t m_device_failure_count;
   bool m_gpu_initialized;
   int32_t m_device;
   uint64_t* h_solution;

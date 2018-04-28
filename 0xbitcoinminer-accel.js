@@ -1,25 +1,20 @@
 'use strict';
 
 const web3utils = require('web3-utils');
-const BN = require('bn.js');
 const miningLogger = require("./lib/mining-logger");
-const tokenContractJSON = require('./contracts/_0xBitcoinToken.json');
 const CPPMiner = require('./build/Release/hybridminer');
-
-//only load this if selecting 'gpu mine!!!'
-
-var tokenContract;
 
 const PRINT_STATS_TIMEOUT = 100;
 const PRINT_STATS_BARE_TIMEOUT = 5000;
 const COLLECT_MINING_PARAMS_TIMEOUT = 4000;
-var hardwareType = 'cuda'; //default
 var startTime;
 var newSolution = false;
 var addressFrom;
+var oldChallenge;
+var failedSolutions = 0;
 
 module.exports = {
-    async init(miningLogger)
+    async init()
     {
         process.on('exit', () => {
             miningLogger.print("Process exiting... stopping miner");
@@ -27,8 +22,6 @@ module.exports = {
         });
 
         CPPMiner.setHardwareType('cuda')
-
-        this.miningLogger = miningLogger;
     },
 
     async mine() {
@@ -49,7 +42,6 @@ module.exports = {
             await this.collectMiningParameters(miningParameters)
         }, COLLECT_MINING_PARAMS_TIMEOUT);
 
-        let os = require('os');
         if(oldWindows) {
             setInterval(() => { this.printMiningStatsBare() }, PRINT_STATS_BARE_TIMEOUT);
         } else {
@@ -76,6 +68,7 @@ module.exports = {
 
     async updateCPUAddonParameters(miningParameters) {
         if (this.challengeNumber == null || this.challengeNumber != miningParameters.challengeNumber) {
+            oldChallenge = this.challengeNumber;
             this.challengeNumber = miningParameters.challengeNumber
 
             CPPMiner.setPrefix(this.challengeNumber + miningParameters.poolEthAddress.slice(2));
@@ -95,7 +88,7 @@ module.exports = {
         }
     },
 
-    mineCoins(miningParameters) {
+    async mineCoins(miningParameters) {
         const verifyAndSubmit = () => {
             let solution_number = "0x" + CPPMiner.getSolution();
             if (solution_number == "0x" || web3utils.toBN(solution_number).eq(0)) { return; }
@@ -105,15 +98,22 @@ module.exports = {
                                                 solution_number);
             let digestBigNumber = web3utils.toBN(digest);
             if (digestBigNumber.lte(miningParameters.miningTarget)) {
-                this.submitNewMinedBlock(addressFrom, solution_number, digest, challenge_number,
+                this.submitNewMinedBlock(solution_number, digest, challenge_number,
                                          miningParameters.miningTarget, miningParameters.miningDifficulty)
-            //} else {
-            //    console.error("Verification failed!\n",
-            //                  "challenge:", challenge_number, "\n",
-            //                  "address:", addressFrom, "\n",
-            //                  "solution:", solution_number, "\n",
-            //                  "digest:", digest, "\n",
-            //                  "target:", miningParameters.miningTarget);
+            } else {
+                if (oldChallenge && web3utils.toBN(web3utils.soliditySha3(oldChallenge,
+                                                                          miningParameters.poolEthAddress,
+                                                                          solution_number)).lte(miningParameters.miningTarget)) {
+                    console.error("Verification failed: expired challenge.");
+                } else {
+                    failedSolutions++;
+                    //console.error("Verification failed!\n",
+                    //              "challenge:", challenge_number, "\n",
+                    //              "address:", miningParameters.poolEthAddress, "\n",
+                    //              "solution:", solution_number, "\n",
+                    //              "digest:", digest, "\n",
+                    //              "target:", "0x" + miningParameters.miningTarget.toString(16, 64));
+                }
             }
         }
 
@@ -187,6 +187,13 @@ module.exports = {
         process.stdout.write("\x1b[3;22f\x1b[38;5;221m" +
                              this.networkInterface.getSolutionCount().toString().padStart(8) +
                              "\x1b[0m");
+
+        if (jsConfig["debug"] && failedSolutions > 0)
+        {
+            process.stdout.write("\x1b[4;22f\x1b[38;5;196m" +
+                                 failedSolutions.toString().padStart(8) +
+                                 "\x1b[0m");
+        }
 
         process.stdout.write('\x1b[3;72f\x1b[38;5;33m' +
                              jsConfig.address.slice(0, 8) +
