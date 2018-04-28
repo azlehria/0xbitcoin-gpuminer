@@ -104,7 +104,7 @@ auto MinerState::initState() -> void
   m_start = std::chrono::steady_clock::now();
 }
 
-auto MinerState::getIncSearchSpace(uint64_t const threads ) -> uint64_t
+auto MinerState::getIncSearchSpace( uint64_t const threads ) -> uint64_t
 {
   m_hash_count_printable += threads;
 
@@ -249,7 +249,7 @@ auto MinerState::setTarget( std::string const target ) -> void
 
   std::string const t( static_cast<std::string::size_type>( UINT256_LENGTH * 2 + 2 ) - target.length(), '0' );
 
-  uint64_t temp{ std::stoull( (t + target.substr(2)).substr( 0, 16 ), nullptr, 16 ) };
+  uint64_t temp{ std::stoull( (t + target.substr( 2 )).substr( 0, 16 ), nullptr, 16 ) };
   if( temp == m_target ) return;
 
   m_target = temp;
@@ -260,8 +260,6 @@ auto MinerState::getMessage( uint64_t const device ) -> bytes_t const
   m_message_mutex.lock();
   bytes_t temp = m_message;
   m_message_mutex.unlock();
-
-  temp[64] = static_cast<uint8_t>(device);
 
   return temp;
 }
@@ -275,8 +273,6 @@ auto MinerState::getMidstate( uint64_t (& message_out)[25], uint64_t const devic
   uint64_t message[11]{ 0 };
 
   std::memcpy( message, temp.data(), 84 );
-
-  message[8] |= (device << 56);
 
   uint64_t C[5], D[5], mid[25];
   C[0] = message[0] ^ message[5] ^ message[10] ^ 0x100000000ull;

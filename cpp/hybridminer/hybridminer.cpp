@@ -105,11 +105,11 @@ auto HybridMiner::run() -> void
     {
       m_threads.emplace_back( [&] { solver->findSolution(); } );
     }
+  }
 
-    for( auto&& thr : m_threads )
-    {
-      thr.join();
-    }
+  for( auto&& thr : m_threads )
+  {
+    thr.join();
   }
 }
 
