@@ -1,6 +1,6 @@
 {
   "address" : "0x525F94485486B506FE2dB50e815d4eb95FB54Cef",
-  "pool" : "http://mine0xbtc.eu:8586",
+  "pool" : "http://0xminingpool.com:8586",
   "cuda" : [
     {
       "device": 0,
