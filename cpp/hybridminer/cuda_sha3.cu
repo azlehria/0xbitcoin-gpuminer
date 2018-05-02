@@ -13,6 +13,24 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
 #include "cuda_sha3.h"
 #include "cudasolver.h"
 
+#define cudaSafeCall(err) __cudaSafeCall(err, __FILE__, __LINE__, m_device)
+
+__host__ inline
+auto __cudaSafeCall( cudaError_t err, char const* file, int32_t const line, int32_t device_id ) -> void
+{
+#ifndef NDEBUG
+  if (cudaSuccess != err) {
+    fprintf( stderr,
+             "CUDA device %d encountered an error in file '%s' in line %i : %s.\n",
+             device_id,
+             __FILE__,
+             __LINE__,
+             cudaGetErrorString( err ) );
+    exit(EXIT_FAILURE);
+  }
+#endif
+}
+
 __constant__ uint64_t d_mid[25];
 __constant__ uint64_t d_target;
 
@@ -285,12 +303,9 @@ auto CUDASolver::cudaInit() -> void
   cudaSetDevice( m_device );
 
   cudaDeviceProp device_prop;
-  if( cudaGetDeviceProperties( &device_prop, m_device ) != cudaSuccess )
-  {
-    printf( "Problem getting properties for device, exiting...\n" );
-    exit( EXIT_FAILURE );
-  }
-  int32_t compute_version = device_prop.major * 100 + device_prop.minor * 10;
+  cudaSafeCall( cudaGetDeviceProperties( &device_prop, m_device ) );
+
+  int32_t compute_version{ device_prop.major * 100 + device_prop.minor * 10 };
 
   m_block.x = compute_version > 500 ? TPB50 : TPB35;
   m_grid.x = (m_threads + m_block.x - 1) / m_block.x;
@@ -298,13 +313,13 @@ auto CUDASolver::cudaInit() -> void
   if( !m_gpu_initialized )
   {
     // CPU usage goes _insane_ without this.
-    cudaDeviceReset();
+    cudaSafeCall( cudaDeviceReset() );
     // so we don't actually _use_ L1 or local memory . . .
-    cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync /*| cudaDeviceLmemResizeToMax );
-    cudaDeviceSetCacheConfig( cudaFuncCachePreferL1*/ );
+    cudaSafeCall( cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync /*| cudaDeviceLmemResizeToMax ) );
+    cudaSafeCall( cudaDeviceSetCacheConfig( cudaFuncCachePreferL1*/ ) );
 
-    cudaMalloc( reinterpret_cast<void**>(&d_solution), 8 );
-    cudaMallocHost( reinterpret_cast<void**>(&h_solution), 8 );
+    cudaSafeCall( cudaMalloc( reinterpret_cast<void**>(&d_solution), 8 ) );
+    cudaSafeCall( cudaMallocHost( reinterpret_cast<void**>(&h_solution), 8 ) );
 
     cudaResetSolution();
 
@@ -314,14 +329,14 @@ auto CUDASolver::cudaInit() -> void
 
 auto CUDASolver::cudaCleanup() -> void
 {
-  cudaSetDevice( m_device );
+  cudaSafeCall( cudaSetDevice( m_device ) );
 
-  cudaThreadSynchronize();
+  cudaSafeCall( cudaThreadSynchronize() );
 
-  cudaFree( d_solution );
-  cudaFreeHost( h_solution );
+  cudaSafeCall( cudaFree( d_solution ) );
+  cudaSafeCall( cudaFreeHost( h_solution ) );
 
-  cudaDeviceReset();
+  cudaSafeCall( cudaDeviceReset() );
 
   m_gpu_initialized = false;
 }
@@ -331,7 +346,7 @@ auto CUDASolver::cudaResetSolution() -> void
   cudaSetDevice( m_device );
 
   *h_solution = UINT64_MAX;
-  cudaMemcpy( d_solution, h_solution, 8, cudaMemcpyHostToDevice );
+  cudaSafeCall( cudaMemcpy( d_solution, h_solution, 8, cudaMemcpyHostToDevice ) );
 }
 
 auto CUDASolver::pushTarget() -> void
@@ -339,7 +354,7 @@ auto CUDASolver::pushTarget() -> void
   cudaSetDevice( m_device );
 
   uint64_t target{ MinerState::getTarget() };
-  cudaMemcpyToSymbol( d_target, &target, 8, 0, cudaMemcpyHostToDevice);
+  cudaSafeCall( cudaMemcpyToSymbol( d_target, &target, 8, 0, cudaMemcpyHostToDevice) );
 }
 
 auto CUDASolver::pushMessage() -> void
@@ -348,7 +363,7 @@ auto CUDASolver::pushMessage() -> void
 
   uint64_t message[25];
   MinerState::getMidstate( message, m_device );
-  cudaMemcpyToSymbol( d_mid, message, 200, 0, cudaMemcpyHostToDevice);
+  cudaSafeCall( cudaMemcpyToSymbol( d_mid, message, 200, 0, cudaMemcpyHostToDevice) );
 }
 
 auto CUDASolver::findSolution() -> void
@@ -363,25 +378,27 @@ auto CUDASolver::findSolution() -> void
     if( m_new_message ) { pushMessage(); }
 
     cuda_mine <<< m_grid, m_block >>> ( d_solution, MinerState::getIncSearchSpace( m_threads ) );
-    // tiny bit slower (~0.1%) and clears errors. whatever.
+
     cudaError_t cudaerr = cudaDeviceSynchronize();
     if( cudaerr != cudaSuccess )
     {
-      printf( "Kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n",
-              cudaerr,
-              cudaGetErrorString( cudaerr ) );
+      fprintf( stderr,
+               "Kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n",
+               cudaerr,
+               cudaGetErrorString( cudaerr ) );
 
       ++m_device_failure_count;
 
       if( m_device_failure_count >= 3 )
       {
-        printf( "Kernel launch has failed %u times. Exiting.",
-                m_device_failure_count );
+        fprintf( stderr,
+                 "Kernel launch has failed %u times. Try reducing your overclocks.\n",
+                 m_device_failure_count );
         exit( EXIT_FAILURE );
       }
 
       --m_intensity;
-      printf( "Reducing intensity to %d and restarting.",
+      printf( "Reducing intensity to %d and restarting.\n",
               (m_intensity) );
       cudaCleanup();
       cudaInit();
@@ -390,7 +407,7 @@ auto CUDASolver::findSolution() -> void
       continue;
     }
 
-    cudaMemcpy( h_solution, d_solution, 8, cudaMemcpyDeviceToHost );
+    cudaSafeCall( cudaMemcpy( h_solution, d_solution, 8, cudaMemcpyDeviceToHost ) );
 
     if( *h_solution != UINT64_MAX )
     {

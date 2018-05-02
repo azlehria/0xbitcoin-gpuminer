@@ -12,6 +12,8 @@ var newSolution = false;
 var addressFrom;
 var oldChallenge;
 var failedSolutions = 0;
+var hashAverage = 0;
+var hashSamples = 0;
 
 module.exports = {
     async init()
@@ -98,32 +100,43 @@ module.exports = {
                                                 solution_number);
             let digestBigNumber = web3utils.toBN(digest);
             if (digestBigNumber.lte(miningParameters.miningTarget)) {
-                this.submitNewMinedBlock(solution_number, digest, challenge_number,
-                                         miningParameters.miningTarget, miningParameters.miningDifficulty)
+                this.submitNewMinedBlock(solution_number,
+                                         digest,
+                                         challenge_number,
+                                         miningParameters.miningTarget,
+                                         miningParameters.miningDifficulty)
             } else {
                 if (oldChallenge && web3utils.toBN(web3utils.soliditySha3(oldChallenge,
                                                                           miningParameters.poolEthAddress,
                                                                           solution_number)).lte(miningParameters.miningTarget)) {
-                    console.error("Verification failed: expired challenge.");
+                    miningLogger.print("CPU verification failed: stale solution.");
+                    if (jsConfig.submitstale) {
+                        miningLogger.print("               Submitting solution anyway.")
+                        this.submitNewMinedBlock(solution_number,
+                                                 digest,
+                                                 challenge_number,
+                                                 miningParameters.miningTarget,
+                                                 miningParameters.miningDifficulty)
+                    }
                 } else {
                     failedSolutions++;
-                    //console.error("Verification failed!\n",
-                    //              "challenge:", challenge_number, "\n",
-                    //              "address:", miningParameters.poolEthAddress, "\n",
-                    //              "solution:", solution_number, "\n",
-                    //              "digest:", digest, "\n",
-                    //              "target:", "0x" + miningParameters.miningTarget.toString(16, 64));
+                    console.error("CPU verification failed:\n",
+                                  " challenge:", challenge_number, "\n",
+                                  " address:  ", miningParameters.poolEthAddress, "\n",
+                                  " solution: ", solution_number, "\n",
+                                  " digest:   ", digest, "\n",
+                                  " target:   ", "0x" + miningParameters.miningTarget.toString(16, 64));
                 }
             }
         }
 
-        setInterval(() => { verifyAndSubmit() }, 500);
-
         this.mining = true;
+
+        CPPMiner.run(() => {});
 
         startTime = Date.now();
 
-        CPPMiner.run(() => {});
+        setInterval(() => { verifyAndSubmit() }, 500);
     },
 
     resetHashCounter() {
@@ -139,35 +152,17 @@ module.exports = {
     },
 
     printMiningStats() {
-        let hashes = "0x" + CPPMiner.getGpuHashes() || 0;
+        let hashes = parseInt(CPPMiner.getGpuHashes(), 16) || 0;
         let timeDiff = ((Date.now() - startTime) / 1000) || 0.100;
 
-        if(typeof this.avgHashes == 'undefined') {
-            this.avgHashes = (hashes / timeDiff);
-            this.samples = 1;
-        } else {
-            this.samples++;
-            if((this.samples > 600 &&
-                ((hashes/timeDiff) > (1.50 * this.avgHashes) ||
-                 (hashes/timeDiff) < (0.75 * this.avgHashes))) ||
-               (this.samples > 150 &&
-                ((hashes/timeDiff) > (2.50 * this.avgHashes) ||
-                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
-               (this.samples > 50 &&
-                ((hashes/timeDiff) > (3.00 * this.avgHashes) ||
-                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
-               isNaN(hashes))
-            {
-                if(isNaN(hashes)) console.log("wtf")
-                hashes = this.avgHashes * timeDiff;
-            }
-            this.avgHashes -= this.avgHashes / this.samples;
-            this.avgHashes += (hashes / timeDiff) / this.samples;
-        }
+        hashSamples++;
+
+        hashAverage -= hashAverage / hashSamples;
+        hashAverage += (hashes / timeDiff) / hashSamples;
 
         process.stdout.cork();
         process.stdout.write("\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m" +
-                             (this.avgHashes / 1000000).toFixed(2).toString().padStart(8).slice(-8) +
+                             (hashAverage / 1000000).toFixed(2).toString().padStart(8).slice(-8) +
                              "\x1b[0m\x1b[3;36f\x1b[38;5;208m" +
                              (hashes/1).toFixed(0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(25) +
                              "\x1b[0m\x1b[2;75f\x1b[38;5;33m" +
@@ -202,35 +197,18 @@ module.exports = {
     },
 
     printMiningStatsBare() {
-        let hashes = "0x" + CPPMiner.getGpuHashes();
-        let timeDiff = ((Date.now() - startTime) / 1000.0) || 0.100;
-        if(typeof this.avgHashes == 'undefined') {
-            this.avgHashes = (hashes / timeDiff);
-            this.samples = 1;
-        } else {
-            this.samples++;
-            if((this.samples > 600 &&
-                ((hashes/timeDiff) > (1.50 * this.avgHashes) ||
-                 (hashes/timeDiff) < (0.75 * this.avgHashes))) ||
-               (this.samples > 150 &&
-                ((hashes/timeDiff) > (2.50 * this.avgHashes) ||
-                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
-               (this.samples > 50 &&
-                ((hashes/timeDiff) > (3.00 * this.avgHashes) ||
-                 (hashes/timeDiff) < (0.50 * this.avgHashes))) ||
-               isNaN(hashes))
-            {
-                if(isNaN(hashes)) console.log("wtf")
-                hashes = this.avgHashes * timeDiff;
-            }
-            this.avgHashes -= this.avgHashes / this.samples;
-            this.avgHashes += (hashes / timeDiff) / this.samples;
-        }
+        let hashes = parseInt(CPPMiner.getGpuHashes(), 16) || 0;
+        let timeDiff = ((Date.now() - startTime) / 1000) || 0.100;
+
+        hashSamples++;
+
+        hashAverage -= hashAverage / hashSamples;
+        hashAverage += (hashes / timeDiff) / hashSamples;
 
         miningLogger.print(/*'Raw Hashes:',
                            (hashes/1).toFixed(0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(16),
                            'Hash rate:',*/
-                           (this.avgHashes / 1000000).toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(10).slice(-10),
+                           (hashAverage / 1000000).toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(10).slice(-10),
                            "MH/s  Sols:",
                            this.networkInterface.getSolutionCount().toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",").padStart(6)
                            + (newSolution ? '^' : ' '),
