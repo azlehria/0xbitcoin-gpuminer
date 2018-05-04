@@ -42,8 +42,7 @@ void miner::Miner::HandleOKCallback()
   // HandleScope scope;
 
   // v8::Local<v8::Value> argv[] = {
-  //   Null(),
-  //   New<v8::String>( hybridminer->solution() ).ToLocalChecked()
+  //   Null()
   // };
 
   // callback->Call( 2, argv, async_resource );
@@ -88,7 +87,7 @@ NAN_METHOD( miner::getTarget )
 {
   char buf[17];
   sprintf( buf, "%016" PRIx64, MinerState::getTarget() );
-  info.GetReturnValue().Set( New<v8::String>( buf ).ToLocalChecked() );
+  info.GetReturnValue().Set( Nan::New<v8::String>( buf ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::setPrefix )
@@ -113,7 +112,13 @@ NAN_METHOD( miner::setAddress )
 
 NAN_METHOD( miner::getAddress )
 {
-  info.GetReturnValue().Set( New<v8::String>( MinerState::getAddress() ).ToLocalChecked() );
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getAddress() ).ToLocalChecked() );
+}
+
+NAN_METHOD( miner::getCustomDiff )
+{
+  v8::Local<v8::Boolean> ret = Nan::New( MinerState::getCustomDiff() );
+  info.GetReturnValue().Set( ret );
 }
 
 NAN_METHOD( miner::setDiff )
@@ -128,14 +133,19 @@ NAN_METHOD( miner::setDiff )
 
 NAN_METHOD( miner::getDiff )
 {
-  info.GetReturnValue().Set( New<v8::Number>( static_cast<double>(MinerState::getDiff()) ) );
+  info.GetReturnValue().Set( Nan::New<v8::Number>( static_cast<double>(MinerState::getDiff()) ) );
+}
+
+NAN_METHOD( miner::getPoolAddress )
+{
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getPoolAddress() ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::getGpuHashes )
 {
   char buf[17];
   sprintf( buf, "%016" PRIx64, MinerState::getPrintableHashCount() );
-  info.GetReturnValue().Set( New<v8::String>( buf ).ToLocalChecked() );
+  info.GetReturnValue().Set( Nan::New<v8::String>( buf ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::resetHashCounter )
@@ -156,13 +166,19 @@ NAN_METHOD( miner::incSolCount )
 
 NAN_METHOD( miner::getSolution )
 {
-  info.GetReturnValue().Set( New<v8::String>( MinerState::getSolution().c_str() ).ToLocalChecked() );
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getSolution().c_str() ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::printStatus )
 {
-  MinerState::printStatus();
+  MinerState::printStatus( true );
   info.GetReturnValue().SetUndefined();
+}
+
+NAN_METHOD( miner::isInitComplete )
+{
+  v8::Local<v8::Boolean> ret = Nan::New(false /*hybridminer->isInitComplete()*/ );
+  info.GetReturnValue().Set( ret );
 }
 
 // Defines the functions our add-on will export
@@ -207,6 +223,11 @@ NAN_MODULE_INIT( miner::Init )
        );
 
   Set( target
+       , New<v8::String>( "getCustomDiff" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getCustomDiff )->GetFunction()
+       );
+
+  Set( target
        , New<v8::String>( "setDiff" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( setDiff )->GetFunction()
        );
@@ -214,6 +235,11 @@ NAN_MODULE_INIT( miner::Init )
   Set( target
        , New<v8::String>( "getDiff" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( getDiff )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "getPoolAddress" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getPoolAddress )->GetFunction()
        );
 
   Set( target
@@ -241,6 +267,11 @@ NAN_MODULE_INIT( miner::Init )
        , New<v8::FunctionTemplate>( printStatus )->GetFunction()
        );
 
+
+  Set( target
+       , New<v8::String>( "isInitComplete" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( isInitComplete )->GetFunction()
+       );
   hybridminer = new HybridMiner;
 
   node::AtExit( cleanup, hybridminer );

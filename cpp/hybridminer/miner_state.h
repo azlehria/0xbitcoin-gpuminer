@@ -12,7 +12,7 @@
 #include <random>
 #include <atomic>
 #include <string>
-
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <stdio.h>
@@ -42,7 +42,8 @@ public:
   static auto getIncSearchSpace( uint64_t const threads ) -> uint64_t;
   static auto resetCounter() -> void;
   static auto getPrintableHashCount() -> uint64_t;
-  static auto printStatus() -> void;
+  static auto printStatus( bool old_ui ) -> void;
+  static auto getPrintableTimeStamp() -> std::string const;
 
   static auto pushSolution( uint64_t const sol ) -> void;
   static auto getSolution() -> std::string const;
@@ -56,17 +57,23 @@ public:
   static auto getMessage( uint64_t const device = 0 ) -> bytes_t const;
   static auto getMidstate( uint64_t (& message_out)[25], uint64_t const device = 0 ) -> void;
 
-  static auto setAddress( std::string const account ) -> void;
+  static auto setAddress( std::string const address ) -> void;
   static auto getAddress() -> std::string const;
 
+  static auto setCustomDiff( uint64_t const diff ) -> void;
+  static auto getCustomDiff() -> bool const;
   static auto setDiff( uint64_t const diff ) -> void;
   static auto getDiff() -> uint64_t const;
+
+  static auto setPoolAddress( std::string const pool ) -> void;
+  static auto getPoolAddress() -> std::string const;
 
 private:
   static bytes_t m_message;
   static std::mutex m_message_mutex;
 
   static std::atomic<uint64_t> m_target;
+  static std::atomic<bool> m_custom_diff;
   static std::atomic<uint64_t> m_diff;
 
   static std::string m_solution_start;
@@ -80,8 +87,11 @@ private:
 
   static std::atomic<uint64_t> m_hash_count;
   static std::atomic<uint64_t> m_hash_count_printable;
+  static std::atomic<uint64_t> m_hash_count_samples;
+  static std::atomic<double> m_hash_average;
 
   static std::atomic<uint64_t> m_sol_count;
+  static std::atomic<bool> m_new_solution;
 
   static std::string m_challenge_printable;
   static std::string m_address_printable;
@@ -89,6 +99,9 @@ private:
 
   static std::string m_address;
   static std::mutex m_address_mutex;
+
+  static std::string m_pool_address;
+  static std::mutex m_pool_mutex;
 };
 
 #endif // !_MINER_STATE_H_

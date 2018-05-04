@@ -16,7 +16,7 @@ class CUDASolver
 {
 public:
   CUDASolver() = delete;
-  CUDASolver( int32_t device, int32_t intensity ) noexcept;
+  CUDASolver( int32_t device, double intensity ) noexcept;
   ~CUDASolver();
 
   auto findSolution() -> void;
@@ -40,8 +40,8 @@ private:
   std::atomic<bool> m_new_target;
   std::atomic<bool> m_new_message;
 
-  int32_t m_intensity;
-  uint32_t m_threads;
+  double m_intensity;
+  uint64_t m_threads;
 
   uint_fast8_t m_device_failure_count;
   bool m_gpu_initialized;

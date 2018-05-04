@@ -1,3 +1,4 @@
+#include <fstream>
 #include "miner_state.h"
 
 static char const* ascii[] = {
@@ -58,17 +59,23 @@ std::string MinerState::m_solution_start;
 std::string MinerState::m_solution_end;
 std::atomic<uint64_t> MinerState::m_hash_count{ 0ull };
 std::atomic<uint64_t> MinerState::m_hash_count_printable{ 0ull };
+std::atomic<uint64_t> MinerState::m_hash_count_samples{ 0ull };
+std::atomic<double> MinerState::m_hash_average{ 0.0 };
 MinerState::bytes_t MinerState::m_message( MESSAGE_LENGTH );
 std::mutex MinerState::m_message_mutex;
-std::atomic<uint64_t> m_sol_count;
+std::atomic<uint64_t> m_sol_count{ 0ull };
 std::mutex MinerState::m_print_mutex;
 std::string MinerState::m_challenge_printable;
 std::string MinerState::m_address_printable;
-std::atomic<uint64_t> MinerState::m_target;
-std::atomic<uint64_t> MinerState::m_diff{ 1 };
-std::atomic<uint64_t> MinerState::m_sol_count{ 0 };
+std::atomic<uint64_t> MinerState::m_target{ 0ull };
+std::atomic<bool> MinerState::m_custom_diff{ false };
+std::atomic<uint64_t> MinerState::m_diff{ 1ull };
+std::atomic<uint64_t> MinerState::m_sol_count{ 0ull };
+std::atomic<bool> MinerState::m_new_solution{ false };
 std::string MinerState::m_address;
 std::mutex MinerState::m_address_mutex;
+std::string MinerState::m_pool_address;
+std::mutex MinerState::m_pool_mutex;
 
 std::chrono::steady_clock::time_point MinerState::m_start;
 std::chrono::steady_clock::time_point MinerState::m_end;
@@ -90,16 +97,13 @@ auto MinerState::initState() -> void
   std::memset( &temp_solution[12], 0, 8 );
 
   m_message_mutex.lock();
-  memcpy( &m_message[52], temp_solution.data(), 32 );
+  std::memcpy( &m_message[52], temp_solution.data(), 32 );
   m_message_mutex.unlock();
 
   std::string str_solution{ bytesToString( temp_solution ) };
 
   m_solution_start = str_solution.substr( 0, 24 );
   m_solution_end = str_solution.substr( 40, 24 );
-
-  m_hash_count = 0ull;
-  m_hash_count_printable = 0ull;
 
   m_start = std::chrono::steady_clock::now();
 }
@@ -118,47 +122,88 @@ auto MinerState::resetCounter() -> void
   m_start = std::chrono::steady_clock::now();
 }
 
-auto MinerState::printStatus() -> void
+auto MinerState::printStatus( bool old_ui ) -> void
 {
-  m_end = std::chrono::steady_clock::now();
-  auto t = std::chrono::duration_cast<std::chrono::seconds>( std::chrono::steady_clock::now() - m_start ).count();
+  if( m_hash_count_printable <= 0 ) return;
 
-  double t2{ static_cast<double>(m_hash_count_printable) / t / 1000000 };
+  auto t = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - m_start ).count()) / 1000;
 
-  // uint64_t temp_hashes{ m_hash_count_printable };
+  ++m_hash_count_samples;
 
-  // maybe breaking the control codes into macros is a good idea . . .
-  // the std::cout version is a thing of horror
-  // printf( "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m%*.2f\x1b[0m"
-  //         "\x1b[3;36f\x1b[38;5;208m%*" PRIu64 "\x1b[0m"
-  //         "\x1b[2;75f\x1b[38;5;33m%02u:%02u\x1b[0m\x1b[u\x1b[?25h",
-  //         8, ( static_cast<double>(temp_hashes) / t / 1000000 ),
-  //         25, temp_hashes,
-  //         (static_cast<uint32_t>(t)/60), (static_cast<uint32_t>(t)%60) );
+  double temp_average{ m_hash_average };
+  //temp_average = ((temp_average) * (m_hash_count_samples - 1) + m_hash_count_printable) / m_hash_count_samples;
+  temp_average -= temp_average / m_hash_count_samples;
+  temp_average += ((m_hash_count_printable / t) / m_hash_count_samples);
+  m_hash_average = temp_average;
+
+  double t2{ temp_average / 1000000 };
 
   std::stringstream ss_out;
-  // maybe breaking the control codes into macros is a good idea . . .
-  ss_out << "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m"
-         << std::setw( 8 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-         << ( std::isnan( t2 ) || std::isinf( t2 ) ? 0 : t2 )
-         << "\x1b[3;36f\x1b[38;5;208m"
-         << std::setw( 25 ) << m_hash_count_printable
-         << "\x1b[2;75f\x1b[38;5;33m"
-         << std::setw( 2 ) << std::setfill( '0' ) << (t/60) << ":"
-         << std::setw( 2 ) << std::setfill( '0' ) << (t%60)
-         << "\x1b[3;14f\x1b[38;5;34m"
-         << m_diff
-         << "\x1b[3;22f\x1b[38;5;221m"
-         << std::setw( 8 ) << std::setfill( ' ' ) << m_sol_count
-         << "\x1b[3;72f\x1b[38;5;33m";
-  m_print_mutex.lock();
-  ss_out << m_address_printable
-         <<"\x1b[2;13f\x1b[38;5;34m"
-         <<  m_challenge_printable;
-  m_print_mutex.unlock();
-  ss_out << "\x1b[0m\x1b[u\x1b[?25h";
+
+  if( old_ui )
+  {
+    static uint64_t time_counter{ 0 };
+    ++time_counter;
+    if( (time_counter % 50) != 0 ) return;
+
+    ss_out << getPrintableTimeStamp()
+           << std::setw( 10 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
+           << ( std::isnan( t2 ) || std::isinf( t2 ) ? 0 : t2 )
+           << " MH/s  Sols:"
+           << std::setw( 6 ) << std::setfill( ' ' ) << m_sol_count
+           << (m_new_solution ? '^' : ' ')
+           << " Search time: "
+           << std::fixed << std::setprecision( 0 )
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t/60) << ":"
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t, 60 ) )
+           << '\n';
+
+    m_new_solution = false;
+  }
+  else
+  {
+    // maybe breaking the control codes into macros is a good idea . . .
+    ss_out << "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m"
+           << std::setw( 8 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
+           << ( std::isnan( t2 ) || std::isinf( t2 ) ? 0 : t2 )
+           << "\x1b[2;75f\x1b[38;5;33m"
+           << std::fixed << std::setprecision( 0 )
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t/60) << ":"
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t, 60 ) )
+           << "\x1b[3;14f\x1b[38;5;34m"
+           << m_diff
+           << "\x1b[3;22f\x1b[38;5;221m"
+           << std::setw( 8 ) << std::setfill( ' ' ) << m_sol_count
+           << "\x1b[3;72f\x1b[38;5;33m";
+    m_print_mutex.lock();
+    ss_out << m_address_printable
+           <<"\x1b[2;13f\x1b[38;5;34m"
+           <<  m_challenge_printable;
+    m_print_mutex.unlock();
+    ss_out.imbue( std::locale( "" ) );
+    ss_out << "\x1b[3;36f\x1b[38;5;208m"
+           << std::setw( 25 ) << m_hash_count_printable;
+    ss_out << "\x1b[0m\x1b[u\x1b[?25h";
+  }
 
   std::cout << ss_out.str();
+}
+
+auto MinerState::getPrintableTimeStamp() -> std::string const
+{
+  using namespace std::chrono;
+
+  std::stringstream ss_ts;
+
+  auto now{ system_clock::now() };
+  auto now_ms{ duration_cast<milliseconds>( now.time_since_epoch() ) % 1000 };
+  std::time_t tt_ts{ system_clock::to_time_t( now ) };
+  std::tm tm_ts{ *std::localtime( &tt_ts ) };
+
+  ss_ts << std::put_time( &tm_ts, "[%T" ) << '.'
+        << std::setw( 3 ) << std::setfill( '0' ) << now_ms.count() << "] ";
+
+  return ss_ts.str();
 }
 
 auto MinerState::getPrintableHashCount() -> uint64_t
@@ -220,6 +265,7 @@ auto MinerState::pushSolution( uint64_t const sol ) -> void
 auto MinerState::incSolCount( uint64_t const count ) -> void
 {
   m_sol_count += count;
+  if( count > 0 ) m_new_solution = true;
 }
 
 auto MinerState::getSolCount() -> uint64_t const
@@ -239,7 +285,7 @@ auto MinerState::setPrefix( std::string const prefix ) -> void
   m_message_mutex.unlock();
 
   m_print_mutex.lock();
-  m_challenge_printable = prefix.substr( 0, 8 );
+  m_challenge_printable = prefix.substr( 2, 8 );
   m_print_mutex.unlock();
 }
 
@@ -339,6 +385,17 @@ auto MinerState::getAddress() -> std::string const
   return ret;
 }
 
+auto MinerState::setCustomDiff( uint64_t const diff ) -> void
+{
+  m_custom_diff = true;
+  m_diff = diff;
+}
+
+auto MinerState::getCustomDiff() -> bool const
+{
+  return m_custom_diff;
+}
+
 auto MinerState::setDiff( uint64_t const diff ) -> void
 {
   m_diff = diff;
@@ -347,4 +404,25 @@ auto MinerState::setDiff( uint64_t const diff ) -> void
 auto MinerState::getDiff() -> uint64_t const
 {
   return m_diff;
+}
+
+auto MinerState::setPoolAddress( std::string const pool ) -> void
+{
+  if( pool.find( "mine0xbtc.eu" ) != std::string::npos )
+  {
+    std::cerr << "Selected pool '" << pool << "' is blocked for deceiving the community and apparent scamming.\n"
+              << "Please select a different pool to mine on.\n";
+    std::exit( EXIT_FAILURE );
+  }
+  m_pool_mutex.lock();
+  m_pool_address = pool;
+  m_pool_mutex.unlock();
+}
+
+auto MinerState::getPoolAddress() -> std::string const
+{
+  m_pool_mutex.lock();
+  std::string ret = m_pool_address;
+  m_pool_mutex.unlock();
+  return ret;
 }

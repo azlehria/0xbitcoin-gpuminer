@@ -22,7 +22,7 @@ namespace miner
   ::HybridMiner* hybridminer = nullptr;
 
   //call C++ dtors:
-  void cleanup( void* p );
+  auto cleanup( void* p ) -> void;
 
   class Miner : public AsyncWorker
   {
@@ -32,13 +32,13 @@ namespace miner
     ~Miner() = default;
 
     // This function runs in a thread spawned by NAN
-    void Execute();
+    auto Execute() -> void;
 
   private:
     // Executed when the async work is complete
     // this function will be run inside the main event loop
     // so it is safe to use V8 again
-    void HandleOKCallback();
+    auto HandleOKCallback() -> void;
   };
 
   // Run an asynchronous function
@@ -52,13 +52,16 @@ namespace miner
   NAN_METHOD( setPrefix );
   NAN_METHOD( setAddress );
   NAN_METHOD( getAddress );
+  NAN_METHOD( getCustomDiff );
   NAN_METHOD( setDiff );
   NAN_METHOD( getDiff );
+  NAN_METHOD( getPoolAddress );
   NAN_METHOD( getGpuHashes );
   NAN_METHOD( resetHashCounter );
   NAN_METHOD( incSolCount );
   NAN_METHOD( getSolution );
   NAN_METHOD( printStatus );
+  NAN_METHOD( isInitComplete );
 
   // Defines the functions our add-on will export
   NAN_MODULE_INIT( Init );

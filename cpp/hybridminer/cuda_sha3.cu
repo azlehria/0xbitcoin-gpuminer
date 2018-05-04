@@ -18,7 +18,7 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
 __host__ inline
 auto __cudaSafeCall( cudaError_t err, char const* file, int32_t const line, int32_t device_id ) -> void
 {
-#ifndef NDEBUG
+#ifndef CUDA_NDEBUG
   if (cudaSuccess != err) {
     fprintf( stderr,
              "CUDA device %d encountered an error in file '%s' in line %i : %s.\n",
@@ -398,7 +398,8 @@ auto CUDASolver::findSolution() -> void
       }
 
       --m_intensity;
-      printf( "Reducing intensity to %d and restarting.\n",
+      m_threads = static_cast<uint64_t>(std::pow( 2, m_intensity ));
+      printf( "Reducing intensity to %.2f and restarting.\n",
               (m_intensity) );
       cudaCleanup();
       cudaInit();
