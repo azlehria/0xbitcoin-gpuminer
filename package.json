@@ -1,6 +1,6 @@
 {
   "name": "0xbitcoin-miner",
-  "version": "2.9.0-pre2",
+  "version": "2.10.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/azlehria/0xbitcoin-gpuminer.git"
@@ -12,28 +12,18 @@
   "main": "index.js",
   "scripts": {
     "build": "node-gyp rebuild",
-    "package": "pkg index.js",
+    "package": "pkg -o 0xbitcoin-miner -t host index.js",
     "test": "./node_modules/mocha/bin/mocha"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "appdata": "^1.1.0",
-    "cryptr": "^3.0.0",
-    "ethereumjs-tx": "^1.3.3",
     "jayson": "^2.0.5",
-    "js-sha3": "^0.7.0",
-    "leftpad": "^0.0.1",
-    "mkdirp": "^0.5.1",
     "nan": "^2.9.2",
-    "node-localstorage": "^1.3.0",
-    "prompt": "^1.0.0",
-    "web3": "^1.0.0-beta.29",
-    "web3-eth": "^1.0.0-beta.30",
     "web3-utils": "^1.0.0-beta.30"
   },
   "pkg": {
-    "scripts": "node_modules/scrypt/index.js",
+    "scripts": [],
     "assets": []
   },
   "devDependencies": {
