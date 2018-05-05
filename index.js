@@ -1,6 +1,6 @@
 'use strict';
 
-const Miner = require("./0xbitcoinminer-accel");
+const Miner = require("./lib/0xbitcoinminer-accel");
 
 init();
 

@@ -10,13 +10,13 @@
     {
       "target_name": "hybridminer",
       "sources": [
-        "cpp/hybridminer/addon.cc",
-        "cpp/hybridminer/hybridminer.cpp",
-        "cpp/hybridminer/cpusolver.cpp",
-        "cpp/hybridminer/miner_state.cpp",
-        "cpp/hybridminer/sha3.c",
-        "cpp/hybridminer/cudasolver.cpp",
-        "cpp/hybridminer/cuda_sha3.cu"
+        "cpp/addon.cc",
+        "cpp/hybridminer.cpp",
+        "cpp/cpusolver.cpp",
+        "cpp/miner_state.cpp",
+        "cpp/sha3.c",
+        "cpp/cudasolver.cpp",
+        "cpp/cuda_sha3.cu"
       ],
       'cflags_cc!': ['-std=gnu++0x'],
       'cflags_cc+': [ '-march=native', '-O3', '-std=c++14', '-Wall' ],
