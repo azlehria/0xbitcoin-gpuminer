@@ -1,6 +1,11 @@
 #include <fstream>
 #include "miner_state.h"
 
+#ifdef _MSC_VER
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#endif // _MSC_VER
+
 static char const* ascii[] = {
   "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
   "10","11","12","13","14","15","16","17","18","19","1a","1b","1c","1d","1e","1f",
@@ -65,6 +70,8 @@ MinerState::bytes_t MinerState::m_message( MESSAGE_LENGTH );
 std::mutex MinerState::m_message_mutex;
 std::atomic<uint64_t> m_sol_count{ 0ull };
 std::mutex MinerState::m_print_mutex;
+std::queue<std::string> MinerState::m_log;
+std::mutex MinerState::m_log_mutex;
 std::string MinerState::m_challenge_printable;
 std::string MinerState::m_address_printable;
 std::atomic<uint64_t> MinerState::m_target{ 0ull };
@@ -76,9 +83,9 @@ std::string MinerState::m_address;
 std::mutex MinerState::m_address_mutex;
 std::string MinerState::m_pool_address;
 std::mutex MinerState::m_pool_mutex;
-
 std::chrono::steady_clock::time_point MinerState::m_start;
 std::chrono::steady_clock::time_point MinerState::m_end;
+std::atomic<bool> MinerState::m_old_ui{ false };
 
 auto MinerState::initState() -> void
 {
@@ -93,6 +100,30 @@ auto MinerState::initState() -> void
   {
     reinterpret_cast<uint64_t&>(temp_solution[i_rand]) = urInt( gen );
   }
+
+  // Default init (false) is fine for non-Windows plats
+#ifdef _MSC_VER
+  m_old_ui = []() -> bool
+    {
+      OSVERSIONINFO winVer;
+      ZeroMemory( &winVer, sizeof(OSVERSIONINFO) );
+      winVer.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+
+      // Stop deprecating things you don't have a _full_ replacement for!
+#pragma warning( push )
+#pragma warning( disable: 4996 )
+      GetVersionEx( &winVer );
+#pragma warning( pop )
+
+      if( ( winVer.dwMajorVersion < 10 ) ||
+          ( winVer.dwMajorVersion >= 10 &&
+            winVer.dwBuildNumber < 14392 ) )
+      {
+        return true;
+      }
+      return false;
+    }();
+#endif // _MSC_VER
 
   std::memset( &temp_solution[12], 0, 8 );
 
@@ -122,7 +153,7 @@ auto MinerState::resetCounter() -> void
   m_start = std::chrono::steady_clock::now();
 }
 
-auto MinerState::printStatus( bool old_ui ) -> void
+auto MinerState::printStatus() -> void
 {
   if( m_hash_count_printable <= 0 ) return;
 
@@ -133,22 +164,24 @@ auto MinerState::printStatus( bool old_ui ) -> void
   double temp_average{ m_hash_average };
   //temp_average = ((temp_average) * (m_hash_count_samples - 1) + m_hash_count_printable) / m_hash_count_samples;
   temp_average -= temp_average / m_hash_count_samples;
-  temp_average += ((m_hash_count_printable / t) / m_hash_count_samples);
+  temp_average += ((m_hash_count_printable / t) / m_hash_count_samples) / 1000000;
   m_hash_average = temp_average;
-
-  double t2{ temp_average / 1000000 };
 
   std::stringstream ss_out;
 
-  if( old_ui )
+  ss_out << getLog();
+
+  if( m_old_ui )
   {
-    static uint64_t time_counter{ 0 };
+    // print every 50th loop - every 5 seconds
+    static uint_fast32_t time_counter{ 0 };
     ++time_counter;
-    if( (time_counter % 50) != 0 ) return;
+    if( time_counter >= 50 ) return;
+    time_counter = 0;
 
     ss_out << getPrintableTimeStamp()
            << std::setw( 10 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-           << ( std::isnan( t2 ) || std::isinf( t2 ) ? 0 : t2 )
+           << ( std::isnan( temp_average ) || std::isinf( temp_average ) ? 0 : temp_average )
            << " MH/s  Sols:"
            << std::setw( 6 ) << std::setfill( ' ' ) << m_sol_count
            << (m_new_solution ? '^' : ' ')
@@ -165,7 +198,7 @@ auto MinerState::printStatus( bool old_ui ) -> void
     // maybe breaking the control codes into macros is a good idea . . .
     ss_out << "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m"
            << std::setw( 8 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-           << ( std::isnan( t2 ) || std::isinf( t2 ) ? 0 : t2 )
+           << ( std::isnan( temp_average ) || std::isinf( temp_average ) ? 0 : temp_average )
            << "\x1b[2;75f\x1b[38;5;33m"
            << std::fixed << std::setprecision( 0 )
            << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t/60) << ":"
@@ -189,6 +222,35 @@ auto MinerState::printStatus( bool old_ui ) -> void
   std::cout << ss_out.str();
 }
 
+auto MinerState::getLog() -> std::string const
+{
+  std::stringstream ss_log;
+
+  m_log_mutex.lock();
+  if( m_log.size() == 0 )
+  {
+    // awkward, but consistent
+    m_log_mutex.unlock();
+    return "";
+  }
+
+  for( uint_fast8_t i{ 0 }; i < 5 && m_log.size() != 0; ++i )
+  {
+    ss_log << m_log.front();
+    m_log.pop();
+  }
+  m_log_mutex.unlock();
+
+  return ss_log.str();
+}
+
+auto MinerState::pushLog( std::string message ) -> void
+{
+  m_log_mutex.lock();
+  m_log.push( getPrintableTimeStamp() + message + '\n' );
+  m_log_mutex.unlock();
+}
+
 auto MinerState::getPrintableTimeStamp() -> std::string const
 {
   using namespace std::chrono;
@@ -200,8 +262,10 @@ auto MinerState::getPrintableTimeStamp() -> std::string const
   std::time_t tt_ts{ system_clock::to_time_t( now ) };
   std::tm tm_ts{ *std::localtime( &tt_ts ) };
 
+  if( !m_old_ui ) ss_ts << "\x1b[90m";
   ss_ts << std::put_time( &tm_ts, "[%T" ) << '.'
         << std::setw( 3 ) << std::setfill( '0' ) << now_ms.count() << "] ";
+  if( !m_old_ui ) ss_ts << "\x1b[39m";
 
   return ss_ts.str();
 }

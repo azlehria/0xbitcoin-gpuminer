@@ -171,7 +171,17 @@ NAN_METHOD( miner::getSolution )
 
 NAN_METHOD( miner::printStatus )
 {
-  MinerState::printStatus( true );
+  MinerState::printStatus();
+  info.GetReturnValue().SetUndefined();
+}
+
+NAN_METHOD( miner::log )
+{
+  Nan::MaybeLocal<v8::String> inp = Nan::To<v8::String>( info[0] );
+  if( !inp.IsEmpty() )
+  {
+    MinerState::pushLog( std::string( *Nan::Utf8String( inp.ToLocalChecked() ) ) );
+  }
   info.GetReturnValue().SetUndefined();
 }
 
@@ -267,6 +277,10 @@ NAN_MODULE_INIT( miner::Init )
        , New<v8::FunctionTemplate>( printStatus )->GetFunction()
        );
 
+  Set( target
+       , New<v8::String>( "log" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( log )->GetFunction()
+       );
 
   Set( target
        , New<v8::String>( "isInitComplete" ).ToLocalChecked()

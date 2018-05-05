@@ -42,8 +42,11 @@ public:
   static auto getIncSearchSpace( uint64_t const threads ) -> uint64_t;
   static auto resetCounter() -> void;
   static auto getPrintableHashCount() -> uint64_t;
-  static auto printStatus( bool old_ui ) -> void;
+  static auto printStatus() -> void;
   static auto getPrintableTimeStamp() -> std::string const;
+
+  static auto getLog() -> std::string const;
+  static auto pushLog( std::string message ) -> void;
 
   static auto pushSolution( uint64_t const sol ) -> void;
   static auto getSolution() -> std::string const;
@@ -93,6 +96,9 @@ private:
   static std::atomic<uint64_t> m_sol_count;
   static std::atomic<bool> m_new_solution;
 
+  static std::queue<std::string> m_log;
+  static std::mutex m_log_mutex;
+
   static std::string m_challenge_printable;
   static std::string m_address_printable;
   static std::mutex m_print_mutex;
@@ -102,6 +108,8 @@ private:
 
   static std::string m_pool_address;
   static std::mutex m_pool_mutex;
+
+  static std::atomic<bool> m_old_ui;
 };
 
 #endif // !_MINER_STATE_H_

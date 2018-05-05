@@ -61,6 +61,7 @@ namespace miner
   NAN_METHOD( incSolCount );
   NAN_METHOD( getSolution );
   NAN_METHOD( printStatus );
+  NAN_METHOD( log );
   NAN_METHOD( isInitComplete );
 
   // Defines the functions our add-on will export

@@ -169,7 +169,7 @@ auto HybridMiner::run() -> void
       do {
         auto timerNext = steady_clock::now() + 100ms;
 
-        MinerState::printStatus( this->m_old_ui );
+        MinerState::printStatus();
 
         std::this_thread::sleep_until( timerNext );
       } while( true );
@@ -238,7 +238,8 @@ auto HybridMiner::printUiBase() const -> void
               << "\x1b[5r\x1b[5;1f\x1b[?25h";
   }
 
-  std::cout << "Mining on " << cudaSolvers.size() << " GPUs using CUDA.\n\n";
+  std::cout << "Mining on " << cudaSolvers.size() << " GPUs using CUDA.\n"
+            << (m_old_ui ? '\n' : '\r');
 }
 
 auto HybridMiner::isInitComplete() const -> bool

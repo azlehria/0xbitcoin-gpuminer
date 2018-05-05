@@ -1,7 +1,6 @@
 'use strict';
 
 const web3utils = require('web3-utils');
-const miningLogger = require("./lib/mining-logger");
 const CPPMiner = require('./build/Release/hybridminer');
 const networkInterface = require("./lib/pool-interface");
 
@@ -14,13 +13,13 @@ var oldChallenge;
 var failedSolutions = 0;
 
 module.exports = {
-    async init()
+    init()
     {
         this.submitNewMinedBlock = networkInterface.queueMiningSolution;
-        networkInterface.init(CPPMiner.resetHashCounter, CPPMiner.incSolCount);
+        networkInterface.init(CPPMiner.resetHashCounter, CPPMiner.incSolCount, CPPMiner.log);
 
         process.on('exit', () => {
-            miningLogger.print("Process exiting... stopping miner");
+            CPPMiner.log("Process exiting... stopping miner");
             CPPMiner.stop();
         });
 
@@ -36,7 +35,7 @@ module.exports = {
                 // C++ module entry point
                 this.mineCoins();
             } catch (e) {
-                miningLogger.print(e)
+                CPPMiner.log(e.toString())
             }
         }
 
@@ -58,7 +57,7 @@ module.exports = {
             //give data to the c++ addon
             await this.updateCPUAddonParameters()
         } catch (e) {
-            miningLogger.print(e)
+            CPPMiner.log(e.toString())
         }
     },
 
@@ -94,10 +93,10 @@ module.exports = {
                                                     this.miningParameters.poolEthAddress,
                                                     solution_number);
             } catch(err) {
-                miningLogger.print("Error generating digest:",
-                                   "\n chal:", challenge_number,
-                                   "\n addr:", this.miningParameters.poolEthAddress,
-                                   "\n sol: ", solution_number);
+                CPPMiner.log("Error generating digest:" +
+                             "\n chal: " + challenge_number +
+                             "\n addr: " + this.miningParameters.poolEthAddress +
+                             "\n sol:  " + solution_number);
             }
             let digestBigNumber = web3utils.toBN(digest);
             if (digestBigNumber.lte(this.miningParameters.miningTarget)) {
@@ -112,23 +111,24 @@ module.exports = {
                     web3utils.toBN(web3utils.soliditySha3(oldChallenge,
                                                           this.miningParameters.poolEthAddress,
                                                           solution_number)).lte(this.miningParameters.miningTarget)) {
-                    miningLogger.print("CPU verification failed: stale solution.");
+                    let tempLog = "CPU verification failed: stale solution.";
                     if (jsConfig.submitstale) {
-                        miningLogger.print("               Submitting solution anyway.")
+                        tempLog += "\n               Submitting solution anyway.";
                         this.submitNewMinedBlock(solution_number,
                                                  digest,
                                                  challenge_number,
                                                  this.miningParameters.miningTarget,
                                                  this.miningParameters.miningDifficulty)
                     }
+                    CPPMiner.log(tempLog);
                 } else {
                     failedSolutions++;
-                    console.error("CPU verification failed:\n",
-                                  " challenge:", challenge_number, "\n",
-                                  " address:  ", this.miningParameters.poolEthAddress, "\n",
-                                  " solution: ", solution_number, "\n",
-                                  " digest:   ", digest, "\n",
-                                  " target:   ", "0x" + this.miningParameters.miningTarget.toString(16, 64));
+                    CPPMiner.log("CPU verification failed:" +
+                                 "\n challenge: " + challenge_number +
+                                 "\n address:   " + this.miningParameters.poolEthAddress +
+                                 "\n solution:  " + solution_number +
+                                 "\n digest:    " + digest +
+                                 "\n target:    0x" + this.miningParameters.miningTarget.toString(16, 64));
                 }
             }
         }
