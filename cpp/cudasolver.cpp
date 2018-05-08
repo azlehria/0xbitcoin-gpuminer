@@ -2,7 +2,7 @@
 #include "cudasolver.h"
 
 // don't put this in the header . . .
-#include "cuda_sha3.h"
+#include "miner_state.h"
 
 CUDASolver::CUDASolver( int32_t device, double intensity ) noexcept :
 m_stop( false ),
@@ -36,4 +36,24 @@ auto CUDASolver::updateMessage() -> void
 auto CUDASolver::stopFinding() -> void
 {
   m_stop = true;
+}
+
+auto CUDASolver::getNextSearchSpace() -> uint64_t
+{
+  return MinerState::getIncSearchSpace( m_threads );
+}
+
+auto CUDASolver::getTarget() -> uint64_t
+{
+  return MinerState::getTarget();
+}
+
+auto CUDASolver::getMidstate( uint64_t (& message)[25] ) -> void
+{
+  MinerState::getMidstate( message, m_device );
+}
+
+auto CUDASolver::pushSolution() -> void
+{
+  MinerState::pushSolution( *h_solution );
 }

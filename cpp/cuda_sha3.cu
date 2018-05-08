@@ -23,8 +23,8 @@ auto __cudaSafeCall( cudaError_t err, char const* file, int32_t const line, int3
     fprintf( stderr,
              "CUDA device %d encountered an error in file '%s' in line %i : %s.\n",
              device_id,
-             __FILE__,
-             __LINE__,
+             file,
+             line,
              cudaGetErrorString( err ) );
     exit(EXIT_FAILURE);
   }
@@ -276,6 +276,8 @@ auto keccak( uint64_t nounce ) -> bool
 
   state[ 0] = chi( state[ 0], state[ 6], state[12] ) ^ RC[23];
 
+  if( reinterpret_cast<uint2&>(state[0]).x != 0u ) return false;
+
   return bswap_64( state[0] ) <= d_target;
 }
 
@@ -353,7 +355,7 @@ auto CUDASolver::pushTarget() -> void
 {
   cudaSetDevice( m_device );
 
-  uint64_t target{ MinerState::getTarget() };
+  uint64_t target{ getTarget() };
   cudaSafeCall( cudaMemcpyToSymbol( d_target, &target, 8, 0, cudaMemcpyHostToDevice) );
 }
 
@@ -362,7 +364,7 @@ auto CUDASolver::pushMessage() -> void
   cudaSetDevice( m_device );
 
   uint64_t message[25];
-  MinerState::getMidstate( message, m_device );
+  getMidstate( message );
   cudaSafeCall( cudaMemcpyToSymbol( d_mid, message, 200, 0, cudaMemcpyHostToDevice) );
 }
 
@@ -377,7 +379,7 @@ auto CUDASolver::findSolution() -> void
     if( m_new_target ) { pushTarget(); }
     if( m_new_message ) { pushMessage(); }
 
-    cuda_mine <<< m_grid, m_block >>> ( d_solution, MinerState::getIncSearchSpace( m_threads ) );
+    cuda_mine <<< m_grid, m_block >>> ( d_solution, getNextSearchSpace() );
 
     cudaError_t cudaerr = cudaDeviceSynchronize();
     if( cudaerr != cudaSuccess )
@@ -412,7 +414,7 @@ auto CUDASolver::findSolution() -> void
 
     if( *h_solution != UINT64_MAX )
     {
-      MinerState::pushSolution( *h_solution );
+      pushSolution();
       cudaResetSolution();
     }
   } while( !m_stop );

@@ -15,6 +15,7 @@
         "cpp/cpusolver.cpp",
         "cpp/miner_state.cpp",
         "cpp/sha3.c",
+#        "cpp/keccak.c",
         "cpp/cudasolver.cpp",
         "cpp/cuda_sha3.cu"
       ],

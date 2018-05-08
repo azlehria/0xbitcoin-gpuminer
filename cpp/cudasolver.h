@@ -1,14 +1,7 @@
 #ifndef _CUDASOLVER_H_
 #define _CUDASOLVER_H_
 
-// default magic numbers
-#define INTENSITY 23
-#define CUDA_DEVICE 0
-// default magic numbers
-
-#include "miner_state.h"
-
-#include <cuda_runtime.h>
+#include <vector_types.h>
 #include <atomic>
 #include <string>
 
@@ -35,6 +28,11 @@ private:
   auto cudaCleanup() -> void;
 
   auto cudaResetSolution() -> void;
+
+  auto getNextSearchSpace() -> uint64_t;
+  auto getTarget() -> uint64_t;
+  auto getMidstate( uint64_t (& message)[25] ) -> void;
+  auto pushSolution() -> void;
 
   std::atomic<bool> m_stop;
   std::atomic<bool> m_new_target;

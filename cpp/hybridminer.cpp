@@ -7,6 +7,8 @@
 #  include <windows.h>
 #endif // _MSC_VER
 
+uint32_t constexpr DEFAULT_INTENSITY{ 23 };
+
 HybridMiner::HybridMiner() noexcept :
 m_init_complete( false ),
 m_old_ui( []() -> bool
@@ -128,7 +130,7 @@ auto HybridMiner::run() -> void
     {
       for( int_fast32_t i{ 0u }; i < device_count; ++i )
       {
-        cudaSolvers.push_back( std::make_unique<CUDASolver>( i, INTENSITY ) );
+        cudaSolvers.push_back( std::make_unique<CUDASolver>( i, DEFAULT_INTENSITY ) );
       }
     }
 

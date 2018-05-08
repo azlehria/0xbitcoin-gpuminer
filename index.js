@@ -8,11 +8,8 @@ function init() {
     let os = require('os');
     global.oldWindows = process.platform == 'win32' && (os.release().slice(0,2) < 10 || os.release().slice(5,10) < 14392);
 
-    if (process.platform == 'win32') {
-        global.jsConfig = require(process.execPath.substring(0, process.execPath.lastIndexOf('\\')) + '/0xbitcoin.json');
-    } else {
-        global.jsConfig = require(process.execPath.substring(0, process.execPath.lastIndexOf('/')) + '/0xbitcoin.json');
-    }
+    let fs = require('fs');
+    global.jsConfig = JSON.parse(fs.readFileSync('0xbitcoin.json'));
 
     if (!jsConfig)
     {

@@ -20,6 +20,9 @@
 #include <inttypes.h>
 #include <time.h>
 #include <chrono>
+#include <array>
+
+#include "json.hpp"
 
 #define ROTL64(x, y) (((x) << (y)) ^ ((x) >> (64 - (y))))
 
@@ -30,6 +33,10 @@ public:
   static const uint_fast8_t PREFIX_LENGTH = 52u;
   static const uint_fast8_t UINT256_LENGTH = 32u;
   static const uint_fast8_t MESSAGE_LENGTH = 84u;
+  typedef std::array<uint8_t, 52u> prefix_t;
+  typedef std::array<uint8_t, 32u> hash_t;
+  typedef std::array<uint8_t, 84u> message_t;
+  typedef std::array<uint8_t, 22u> address_t;
 
   MinerState() = delete;
 
@@ -84,6 +91,7 @@ private:
 
   static std::chrono::steady_clock::time_point m_start;
   static std::chrono::steady_clock::time_point m_end;
+  static std::chrono::steady_clock::time_point m_round_start;
 
   static std::queue<uint64_t> m_solutions_queue;
   static std::mutex m_solutions_mutex;

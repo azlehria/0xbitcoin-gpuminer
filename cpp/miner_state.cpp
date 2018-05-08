@@ -1,12 +1,15 @@
 #include <fstream>
 #include "miner_state.h"
 
+// #define SPH_KECCAK_64 1
+// #include "sph_keccak.h"
+
 #ifdef _MSC_VER
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
 #endif // _MSC_VER
 
-static char const* ascii[] = {
+static char constexpr* ascii[] = {
   "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
   "10","11","12","13","14","15","16","17","18","19","1a","1b","1c","1d","1e","1f",
   "20","21","22","23","24","25","26","27","28","29","2a","2b","2c","2d","2e","2f",
@@ -85,6 +88,7 @@ std::string MinerState::m_pool_address;
 std::mutex MinerState::m_pool_mutex;
 std::chrono::steady_clock::time_point MinerState::m_start;
 std::chrono::steady_clock::time_point MinerState::m_end;
+std::chrono::steady_clock::time_point MinerState::m_round_start;
 std::atomic<bool> MinerState::m_old_ui{ false };
 
 auto MinerState::initState() -> void
@@ -137,6 +141,7 @@ auto MinerState::initState() -> void
   m_solution_end = str_solution.substr( 40, 24 );
 
   m_start = std::chrono::steady_clock::now();
+  m_round_start = std::chrono::steady_clock::now();
 }
 
 auto MinerState::getIncSearchSpace( uint64_t const threads ) -> uint64_t
@@ -150,21 +155,29 @@ auto MinerState::resetCounter() -> void
 {
   m_hash_count_printable = 0ull;
 
-  m_start = std::chrono::steady_clock::now();
+  m_round_start = std::chrono::steady_clock::now();
 }
 
 auto MinerState::printStatus() -> void
 {
+  using namespace std::chrono;
+
   if( m_hash_count_printable <= 0 ) return;
 
-  auto t = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>( std::chrono::steady_clock::now() - m_start ).count()) / 1000;
+  double t{ static_cast<double>(duration_cast<milliseconds>(steady_clock::now() - m_start).count()) / 1000 };
+  double t2{ static_cast<double>(duration_cast<milliseconds>(steady_clock::now() - m_round_start).count()) / 1000 };
 
-  ++m_hash_count_samples;
+  if( m_hash_count_samples < 100 )
+  {
+    ++m_hash_count_samples;
+  }
 
   double temp_average{ m_hash_average };
-  //temp_average = ((temp_average) * (m_hash_count_samples - 1) + m_hash_count_printable) / m_hash_count_samples;
-  temp_average -= temp_average / m_hash_count_samples;
-  temp_average += ((m_hash_count_printable / t) / m_hash_count_samples) / 1000000;
+  temp_average += ((m_hash_count / t) / 1000000 - temp_average) / m_hash_count_samples;
+  if( std::isnan( temp_average ) || std::isinf( temp_average ) )
+  {
+    temp_average = m_hash_average;
+  }
   m_hash_average = temp_average;
 
   std::stringstream ss_out;
@@ -181,14 +194,14 @@ auto MinerState::printStatus() -> void
 
     ss_out << getPrintableTimeStamp()
            << std::setw( 10 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-           << ( std::isnan( temp_average ) || std::isinf( temp_average ) ? 0 : temp_average )
+           << temp_average
            << " MH/s  Sols:"
            << std::setw( 6 ) << std::setfill( ' ' ) << m_sol_count
            << (m_new_solution ? '^' : ' ')
            << " Search time: "
            << std::fixed << std::setprecision( 0 )
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t/60) << ":"
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t, 60 ) )
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t2/60) << ":"
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t2, 60 ) )
            << '\n';
 
     m_new_solution = false;
@@ -198,11 +211,11 @@ auto MinerState::printStatus() -> void
     // maybe breaking the control codes into macros is a good idea . . .
     ss_out << "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m"
            << std::setw( 8 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-           << ( std::isnan( temp_average ) || std::isinf( temp_average ) ? 0 : temp_average )
+           << temp_average
            << "\x1b[2;75f\x1b[38;5;33m"
            << std::fixed << std::setprecision( 0 )
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t/60) << ":"
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t, 60 ) )
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t2/60) << ":"
+           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t2, 60 ) )
            << "\x1b[3;14f\x1b[38;5;34m"
            << m_diff
            << "\x1b[3;22f\x1b[38;5;221m"
@@ -280,7 +293,7 @@ auto MinerState::hexStr( uint8_t const* data, int32_t const len ) -> std::string
   std::stringstream ss;
   ss << std::hex;
   for( int_fast32_t i{ 0 }; i < len; ++i )
-    ss << std::setw( 2 ) << std::setfill( '0' ) << static_cast<int8_t>(data[i]);
+    ss << std::setw( 2 ) << std::setfill( '0' ) << data[i];
   return ss.str();
 }
 
