@@ -2,20 +2,8 @@
   "address" : "0x525F94485486B506FE2dB50e815d4eb95FB54Cef",
   "pool" : "http://0xminingpool.com:8586",
   "cuda" : [
-    {
-      "device": 0,
-      "enabled": true,
-      "intensity": 29
-    },
-    {
-      "device": 1,
-      "enabled": true,
-      "intensity": 23
-    },
-    {
-      "device": 2,
-      "enabled": true,
-      "intensity": 23
-    }
+    { "device": 0, "enabled": true, "intensity": 29 },
+    { "device": 1, "enabled": true, "intensity": 23 },
+    { "device": 2, "enabled": true, "intensity": 23 }
   ]
 }
