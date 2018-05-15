@@ -89,7 +89,7 @@ private:
   static uint_fast8_t constexpr PREFIX_LENGTH{ 52u };
   static uint_fast8_t constexpr UINT256_LENGTH{ 32u };
   static uint_fast8_t constexpr MESSAGE_LENGTH{ 84u };
-  static uint32_t constexpr DEFAULT_INTENSITY{ 23u };
+  static double constexpr DEFAULT_INTENSITY{ 23.0 };
 
   static state_t m_midstate;
   static message_t m_message;

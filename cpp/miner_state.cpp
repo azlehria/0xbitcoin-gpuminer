@@ -160,7 +160,7 @@ auto MinerState::initState() -> void
       {
         m_cuda_devices.emplace_back( device["device"],
                                      (device.find( "intensity" ) != device.end()
-                                      ? device["intensity"].get<int32_t>()
+                                      ? device["intensity"].get<double>()
                                       :  DEFAULT_INTENSITY) );
       }
     }
