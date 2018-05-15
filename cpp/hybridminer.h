@@ -16,7 +16,7 @@
 #include <thread>
 #include <string>
 
-char constexpr MINER_VERSION[] = "2.10.3";
+char constexpr MINER_VERSION[] = "2.10.4";
 
 class HybridMiner
 {

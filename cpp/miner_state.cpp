@@ -3,8 +3,8 @@
 #include "miner_state.h"
 #include "addon.h"
 
-// #define SPH_KECCAK_64 1
-// #include "sph_keccak.h"
+#define SPH_KECCAK_64 1
+#include "sph_keccak.h"
 
 #ifdef _MSC_VER
 #  define WIN32_LEAN_AND_MEAN
@@ -354,7 +354,14 @@ auto MinerState::hexToBytes( std::string const hex, T& bytes ) -> void
 {
   assert( hex.length() % 2 == 0 );
   // assert( bytes.size() == ( hex.length() / 2 - 1 ) );
-  HexToBytes( hex.substr( 2 ), &bytes[0] );
+  if( hex.substr( 0, 2 ) == "0x" )
+  {
+    HexToBytes( hex.substr( 2 ), &bytes[0] );
+  }
+  else
+  {
+    HexToBytes( hex, &bytes[0] );
+  }
 }
 
 template<typename T>
@@ -659,4 +666,16 @@ auto MinerState::setSubmitStale( bool const submitStale ) -> void
 auto MinerState::getSubmitStale() -> bool const
 {
   return m_submit_stale;
+}
+
+auto MinerState::keccak256( std::string const message ) -> std::string const
+{
+  message_t data;
+  hexToBytes( message, data );
+  sph_keccak256_context ctx;
+  sph_keccak256_init( &ctx );
+  sph_keccak256( &ctx, data.data(), data.size() );
+  hash_t out;
+  sph_keccak256_close( &ctx, out.data() );
+  return bytesToString( out );
 }

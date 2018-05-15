@@ -181,6 +181,19 @@ NAN_METHOD( miner::getSubmitStale )
   info.GetReturnValue().Set( ret );
 }
 
+NAN_METHOD( miner::keccak256 )
+{
+  Nan::MaybeLocal<v8::String> inp = Nan::To<v8::String>( info[0] );
+  if( !inp.IsEmpty() )
+  {
+    info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::keccak256( std::string( *Nan::Utf8String( inp.ToLocalChecked() ) ) ) ).ToLocalChecked() );
+  }
+  else
+  {
+    info.GetReturnValue().SetUndefined();
+  }
+}
+
 // Defines the functions our add-on will export
 NAN_MODULE_INIT( miner::Init )
 {
@@ -280,6 +293,11 @@ NAN_MODULE_INIT( miner::Init )
   Set( target
        , New<v8::String>( "getSubmitStale" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( getSubmitStale )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "keccak256" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( keccak256 )->GetFunction()
        );
   hybridminer = new HybridMiner;
 

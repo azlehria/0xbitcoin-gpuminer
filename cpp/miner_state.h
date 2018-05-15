@@ -81,6 +81,8 @@ public:
   static auto setSubmitStale( bool const submitStale ) -> void;
   static auto getSubmitStale() -> bool const;
 
+  static auto keccak256( std::string const message ) -> std::string const;
+
 private:
   typedef std::lock_guard<std::mutex> guard;
 

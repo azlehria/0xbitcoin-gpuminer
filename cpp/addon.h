@@ -64,6 +64,7 @@ namespace miner
   NAN_METHOD( log );
   NAN_METHOD( getTokenName );
   NAN_METHOD( getSubmitStale );
+  NAN_METHOD( keccak256 );
 
   // Defines the functions our add-on will export
   NAN_MODULE_INIT( Init );
