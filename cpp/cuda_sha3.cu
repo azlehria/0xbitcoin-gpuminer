@@ -10,6 +10,9 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
  * This is the parallel version of SHA-3.
  */
 
+#include <iostream>
+#include <sstream>
+#include <iomanip>
 #include "cuda_sha3.h"
 #include "cudasolver.h"
 
@@ -20,12 +23,10 @@ auto __cudaSafeCall( cudaError_t err, char const* file, int32_t const line, int3
 {
 #ifndef CUDA_NDEBUG
   if (cudaSuccess != err) {
-    fprintf( stderr,
-             "CUDA device %d encountered an error in file '%s' in line %i : %s.\n",
-             device_id,
-             file,
-             line,
-             cudaGetErrorString( err ) );
+    std::cerr << "CUDA device " << device_id
+              << " encountered an error in file '" << file
+              << "' in line " << line
+              << " : " << cudaGetErrorString( err ) << ".\n";
     exit(EXIT_FAILURE);
   }
 #endif
@@ -34,7 +35,7 @@ auto __cudaSafeCall( cudaError_t err, char const* file, int32_t const line, int3
 __constant__ uint64_t d_mid[25];
 __constant__ uint64_t d_target;
 
-__device__ __constant__ const uint64_t RC[24] = {
+__device__ __constant__ uint64_t const RC[24] = {
   0x0000000000000001, 0x0000000000008082, 0x800000000000808a,
   0x8000000080008000, 0x000000000000808b, 0x0000000080000001,
   0x8000000080008081, 0x8000000000008009, 0x000000000000008a,
@@ -46,19 +47,27 @@ __device__ __constant__ const uint64_t RC[24] = {
 };
 
 __device__ __forceinline__
-auto bswap_64( uint64_t input ) -> uint64_t
+auto bswap_64( uint64_t const input ) -> uint64_t const
 {
   uint64_t output;
   asm( "{"
        "  prmt.b32 %0, %3, 0, 0x0123;"
        "  prmt.b32 %1, %2, 0, 0x0123;"
        "}" : "=r"(reinterpret_cast<uint2&>(output).x), "=r"(reinterpret_cast<uint2&>(output).y)
-           : "r"(reinterpret_cast<uint2&>(input).x), "r"(reinterpret_cast<uint2&>(input).y) );
+           : "r"(reinterpret_cast<uint2 const&>(input).x), "r"(reinterpret_cast<uint2 const&>(input).y) );
   return output;
 }
 
 __device__ __forceinline__
-auto xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e ) -> uint64_t
+auto bswap_32( uint32_t const input ) -> uint32_t const
+{
+  uint32_t output;
+  asm( "prmt.b32 %0, %1, 0, 0x0123;" : "=r"(output) : "r"(input) );
+  return output;
+}
+
+__device__ __forceinline__
+auto xor5( uint64_t const a, uint64_t const b, uint64_t const c, uint64_t const d, uint64_t const e ) -> uint64_t const
 {
   uint64_t output;
   asm( "{"
@@ -71,7 +80,7 @@ auto xor5( uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e ) -> uint6
 }
 
 __device__ __forceinline__
-auto xor3( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
+auto xor3( uint64_t const a, uint64_t const b, uint64_t const c ) -> uint64_t const
 {
   uint64_t output;
 #if __CUDA_ARCH__ >= 500
@@ -79,9 +88,9 @@ auto xor3( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
        "  lop3.b32 %0, %2, %4, %6, 0x96;"
        "  lop3.b32 %1, %3, %5, %7, 0x96;"
        "}" : "=r"(reinterpret_cast<uint2&>(output).x), "=r"(reinterpret_cast<uint2&>(output).y)
-           : "r"(reinterpret_cast<uint2&>(a).x), "r"(reinterpret_cast<uint2&>(a).y),
-             "r"(reinterpret_cast<uint2&>(b).x), "r"(reinterpret_cast<uint2&>(b).y),
-             "r"(reinterpret_cast<uint2&>(c).x), "r"(reinterpret_cast<uint2&>(c).y) );
+           : "r"(reinterpret_cast<uint2 const&>(a).x), "r"(reinterpret_cast<uint2 const&>(a).y),
+             "r"(reinterpret_cast<uint2 const&>(b).x), "r"(reinterpret_cast<uint2 const&>(b).y),
+             "r"(reinterpret_cast<uint2 const&>(c).x), "r"(reinterpret_cast<uint2 const&>(c).y) );
 #else
   asm( "{"
        "  xor.b64 %0, %1, %2;"
@@ -92,7 +101,7 @@ auto xor3( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
 }
 
 __device__ __forceinline__
-auto chi( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
+auto chi( uint64_t const a, uint64_t const b, uint64_t const c ) -> uint64_t const
 {
 #if __CUDA_ARCH__ >= 500
   uint64_t output;
@@ -100,18 +109,20 @@ auto chi( uint64_t a, uint64_t b, uint64_t c ) -> uint64_t
        "  lop3.b32 %0, %2, %4, %6, 0xD2;"
        "  lop3.b32 %1, %3, %5, %7, 0xD2;"
        "}" : "=r"(reinterpret_cast<uint2&>(output).x), "=r"(reinterpret_cast<uint2&>(output).y)
-           : "r"(reinterpret_cast<uint2&>(a).x), "r"(reinterpret_cast<uint2&>(a).y),
-             "r"(reinterpret_cast<uint2&>(b).x), "r"(reinterpret_cast<uint2&>(b).y),
-             "r"(reinterpret_cast<uint2&>(c).x), "r"(reinterpret_cast<uint2&>(c).y) );
+           : "r"(reinterpret_cast<uint2 const&>(a).x), "r"(reinterpret_cast<uint2 const&>(a).y),
+             "r"(reinterpret_cast<uint2 const&>(b).x), "r"(reinterpret_cast<uint2 const&>(b).y),
+             "r"(reinterpret_cast<uint2 const&>(c).x), "r"(reinterpret_cast<uint2 const&>(c).y) );
   return output;
 #else
   return a ^ ((~b) & c);
 #endif
 }
 
-__device__
-auto keccak( uint64_t nounce ) -> bool
+KERNEL_LAUNCH_PARAMS
+void cuda_mine( uint64_t* __restrict__ solution, uint32_t* __restrict__ solution_count, uint64_t const threads )
 {
+  uint64_t const nounce{ threads + (blockDim.x * blockIdx.x + threadIdx.x) };
+
   uint64_t state[25], C[5], D[5];
   uint64_t n[11] { ROTL64(nounce,  7) };
   n[ 1] = ROTL64(n[ 0],  1);
@@ -185,7 +196,6 @@ auto keccak( uint64_t nounce ) -> bool
 #endif
   for( uint_fast8_t i{ 1 }; i < 23; ++i )
   {
-    // Theta
     for( uint_fast8_t x{ 0 }; x < 5; ++x )
     {
       C[(x + 6) % 5] = xor5( state[x], state[x + 5], state[x + 10], state[x + 15], state[x + 20] );
@@ -213,7 +223,6 @@ auto keccak( uint64_t nounce ) -> bool
     }
 #endif
 
-    // Rho Pi
     C[0] = state[1];
     state[ 1] = ROTR64( state[ 6], 20 );
     state[ 6] = ROTL64( state[ 9], 20 );
@@ -240,7 +249,6 @@ auto keccak( uint64_t nounce ) -> bool
     state[ 7] = ROTL64( state[10],  3 );
     state[10] = ROTL64( C[0], 1 );
 
-    // Chi
     for( uint_fast8_t x{ 0 }; x < 25; x += 5 )
     {
       C[0] = state[x];
@@ -255,7 +263,6 @@ auto keccak( uint64_t nounce ) -> bool
       state[x + 4] = chi( C[4], C[0], C[1] );
     }
 
-    // Iota
     state[0] = state[0] ^ RC[i];
   }
 
@@ -276,25 +283,12 @@ auto keccak( uint64_t nounce ) -> bool
 
   state[ 0] = chi( state[ 0], state[ 6], state[12] ) ^ RC[23];
 
-  if( reinterpret_cast<uint2&>(state[0]).x != 0u ) return false;
-
-  return bswap_64( state[0] ) <= d_target;
-}
-
-KERNEL_LAUNCH_PARAMS
-void cuda_mine( uint64_t* __restrict__ solution, const uint64_t cnt )
-{
-  uint64_t nounce{ cnt + (blockDim.x * blockIdx.x + threadIdx.x) };
-
-  if( keccak( nounce ) )
+  if( bswap_64( state[0] ) <= d_target )
   {
-#if defined(_MSC_VER)
-    atomicCAS( solution, UINT64_MAX, nounce );
-#else
-    atomicCAS( reinterpret_cast<unsigned long long*>(solution),
-               static_cast<unsigned long long>(UINT64_MAX),
-               static_cast<unsigned long long>(nounce) );
-#endif
+    uint64_t cIdx{ atomicAdd( solution_count, 1 ) };
+    if( cIdx >= 256 ) return;
+
+    solution[cIdx] = nounce;
   }
 }
 
@@ -317,11 +311,12 @@ auto CUDASolver::cudaInit() -> void
     // CPU usage goes _insane_ without this.
     cudaSafeCall( cudaDeviceReset() );
     // so we don't actually _use_ L1 or local memory . . .
-    cudaSafeCall( cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync /*| cudaDeviceLmemResizeToMax ) );
-    cudaSafeCall( cudaDeviceSetCacheConfig( cudaFuncCachePreferL1*/ ) );
+    cudaSafeCall( cudaSetDeviceFlags( cudaDeviceScheduleBlockingSync ) );
 
-    cudaSafeCall( cudaMalloc( reinterpret_cast<void**>(&d_solution), 8 ) );
-    cudaSafeCall( cudaMallocHost( reinterpret_cast<void**>(&h_solution), 8 ) );
+    cudaSafeCall( cudaMalloc( reinterpret_cast<void**>(&d_solution_count), 4 ) );
+    cudaSafeCall( cudaMallocHost( reinterpret_cast<void**>(&h_solution_count), 4 ) );
+    cudaSafeCall( cudaMalloc( reinterpret_cast<void**>(&d_solutions), 256*8 ) );
+    cudaSafeCall( cudaMallocHost( reinterpret_cast<void**>(&h_solutions), 256*8 ) );
 
     cudaResetSolution();
 
@@ -335,8 +330,10 @@ auto CUDASolver::cudaCleanup() -> void
 
   cudaSafeCall( cudaThreadSynchronize() );
 
-  cudaSafeCall( cudaFree( d_solution ) );
-  cudaSafeCall( cudaFreeHost( h_solution ) );
+  cudaSafeCall( cudaFree( d_solution_count ) );
+  cudaSafeCall( cudaFreeHost( h_solution_count ) );
+  cudaSafeCall( cudaFree( d_solutions ) );
+  cudaSafeCall( cudaFreeHost( h_solutions ) );
 
   cudaSafeCall( cudaDeviceReset() );
 
@@ -347,8 +344,8 @@ auto CUDASolver::cudaResetSolution() -> void
 {
   cudaSetDevice( m_device );
 
-  *h_solution = UINT64_MAX;
-  cudaSafeCall( cudaMemcpy( d_solution, h_solution, 8, cudaMemcpyHostToDevice ) );
+  std::memset( h_solution_count, 0u, 4 );
+  cudaSafeCall( cudaMemset( d_solution_count, 0u, 4 ) );
 }
 
 auto CUDASolver::pushTarget() -> void
@@ -363,9 +360,7 @@ auto CUDASolver::pushMessage() -> void
 {
   cudaSetDevice( m_device );
 
-  uint64_t message[25];
-  getMidstate( message );
-  cudaSafeCall( cudaMemcpyToSymbol( d_mid, message, 200, 0, cudaMemcpyHostToDevice) );
+  cudaSafeCall( cudaMemcpyToSymbol( d_mid, getMidstate().data(), 200, 0, cudaMemcpyHostToDevice) );
 }
 
 auto CUDASolver::findSolution() -> void
@@ -379,30 +374,34 @@ auto CUDASolver::findSolution() -> void
     if( m_new_target ) { pushTarget(); }
     if( m_new_message ) { pushMessage(); }
 
-    cuda_mine <<< m_grid, m_block >>> ( d_solution, getNextSearchSpace() );
+    cuda_mine <<< m_grid, m_block >>> ( d_solutions, d_solution_count, getNextSearchSpace() );
 
     cudaError_t cudaerr = cudaDeviceSynchronize();
     if( cudaerr != cudaSuccess )
     {
-      fprintf( stderr,
-               "Kernel launch failed with error %d: \x1b[38;5;196m%s.\x1b[0m\n",
-               cudaerr,
-               cudaGetErrorString( cudaerr ) );
+      std::cerr << "Kernel launch failed with error "
+                << cudaerr
+                << ": \x1b[38;5;196m"
+                << cudaGetErrorString( cudaerr )
+                << ".\x1b[0m\n";
 
       ++m_device_failure_count;
 
       if( m_device_failure_count >= 3 )
       {
-        fprintf( stderr,
-                 "Kernel launch has failed %u times. Try reducing your overclocks.\n",
-                 m_device_failure_count );
+        std::cerr << "Kernel launch has failed "
+                  << m_device_failure_count
+                  << " times. Try reducing your overclocks.\n";
         exit( EXIT_FAILURE );
       }
 
       --m_intensity;
       m_threads = static_cast<uint64_t>(std::pow( 2, m_intensity ));
-      printf( "Reducing intensity to %.2f and restarting.\n",
-              (m_intensity) );
+      std::stringstream ss_out;
+      ss_out << "Reducing intensity to "
+             << std::setprecision( 2 ) << m_intensity
+             << " and restarting.\n";
+      std::cerr << ss_out.str();
       cudaCleanup();
       cudaInit();
       m_new_target = true;
@@ -410,12 +409,15 @@ auto CUDASolver::findSolution() -> void
       continue;
     }
 
-    cudaSafeCall( cudaMemcpy( h_solution, d_solution, 8, cudaMemcpyDeviceToHost ) );
+    cudaSafeCall( cudaMemcpy( h_solution_count, d_solution_count, 4, cudaMemcpyDeviceToHost ) );
 
-    if( *h_solution != UINT64_MAX )
+    if( *h_solution_count )
     {
+      cudaSafeCall( cudaMemcpy( h_solutions, d_solutions, (*h_solution_count)*8, cudaMemcpyDeviceToHost ) );
       pushSolution();
       cudaResetSolution();
     }
   } while( !m_stop );
+
+  m_stopped = true;
 }

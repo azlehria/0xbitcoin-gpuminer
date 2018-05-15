@@ -1,6 +1,8 @@
+#include <chrono>
 #include "cpusolver.h"
 #include "sha3.h"
-#include <cstring>
+
+using namespace std::chrono;
 
 // --------------------------------------------------------------------
 
@@ -23,8 +25,24 @@ auto bswap64( uint64_t const& in ) -> uint64_t
 }
 
 CPUSolver::CPUSolver() noexcept :
-m_stop( false )
+m_hash_count( 0u ),
+m_hash_count_samples( 0u ),
+m_hash_average( 0 ),
+m_stop( false ),
+m_stopped( false ),
+m_start( steady_clock::now() )
 {
+  m_run_thread = std::thread( &CPUSolver::findSolution, this );
+}
+
+CPUSolver::~CPUSolver()
+{
+  stopFinding();
+  while( !m_stopped || !m_run_thread.joinable() )
+  {
+    std::this_thread::sleep_for( std::chrono::milliseconds( 50u ) );
+  }
+  m_run_thread.join();
 }
 
 auto CPUSolver::stopFinding() -> void
@@ -32,14 +50,14 @@ auto CPUSolver::stopFinding() -> void
   m_stop = true;
 }
 
-auto CPUSolver::findSolution() const -> void
+auto CPUSolver::findSolution() -> void
 {
   uint64_t solution[25];
-  MinerState::bytes_t buffer( MinerState::MESSAGE_LENGTH );
+  message_t buffer;
 
   do
   {
-    buffer = MinerState::getMessage( 0 );
+    buffer = MinerState::getMessage();
     std::memset( solution, 0, 200 );
     std::memcpy( solution, buffer.data(), 84 );
     solution[8] = MinerState::getIncSearchSpace( 1 );
@@ -48,9 +66,16 @@ auto CPUSolver::findSolution() const -> void
     // keccak_256( &digest[0], digest.size(), &buffer[0], buffer.size() );
 
     // printf("%" PRIx64 "\n%" PRIx64 "\n", bswap64( digest.data() ), reinterpret_cast<uint64_t&>(digest[0]));
-    if( bswap64( solution[0] ) < MinerState::getTarget() )
+    if( bswap64( solution[0] ) < MinerState::getTargetNum() )
     {
       MinerState::pushSolution( solution[0] );
     }
   } while( !m_stop );
+
+  m_stopped = true;
+}
+
+auto CPUSolver::getHashrate() const -> double const
+{
+  return m_hash_average;
 }

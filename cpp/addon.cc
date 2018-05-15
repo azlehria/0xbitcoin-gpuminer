@@ -8,7 +8,7 @@
 
 #include "addon.h"
 
-HybridMiner* hybridminer = nullptr;
+HybridMiner* miner::hybridminer = nullptr;
 
 //call C++ dtors:
 void miner::cleanup( void* p )
@@ -63,31 +63,24 @@ NAN_METHOD( miner::stop )
   info.GetReturnValue().SetUndefined();
 }
 
-NAN_METHOD( miner::setHardwareType )
-{
-  Nan::MaybeLocal<v8::String> inp = Nan::To<v8::String>( info[0] );
-  if( !inp.IsEmpty() )
-  {
-    hybridminer->setHardwareType( std::string( *Nan::Utf8String( inp.ToLocalChecked() ) ) );
-  }
-  info.GetReturnValue().SetUndefined();
-}
-
-NAN_METHOD( miner::setTarget )
-{
-  Nan::MaybeLocal<v8::String> inp = Nan::To<v8::String>( info[0] );
-  if( !inp.IsEmpty() )
-  {
-    MinerState::setTarget( std::string( *Nan::Utf8String( inp.ToLocalChecked() ) ) );
-  }
-  info.GetReturnValue().SetUndefined();
-}
-
 NAN_METHOD( miner::getTarget )
 {
-  char buf[17];
-  sprintf( buf, "%016" PRIx64, MinerState::getTarget() );
-  info.GetReturnValue().Set( Nan::New<v8::String>( buf ).ToLocalChecked() );
+  info.GetReturnValue().Set( Nan::New<v8::String>( std::string( BigUnsignedInABase( MinerState::getTarget(), 10 ) ) ).ToLocalChecked() );
+}
+
+NAN_METHOD( miner::getChallenge )
+{
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getChallenge() ).ToLocalChecked() );
+}
+
+NAN_METHOD( miner::getPreviousChallenge )
+{
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getPreviousChallenge() ).ToLocalChecked() );
+}
+
+NAN_METHOD( miner::getPoolAddress )
+{
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getPoolAddress() ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::setPrefix )
@@ -98,6 +91,11 @@ NAN_METHOD( miner::setPrefix )
     MinerState::setPrefix( std::string( *Nan::Utf8String( inp.ToLocalChecked() ) ) );
   }
   info.GetReturnValue().SetUndefined();
+}
+
+NAN_METHOD( miner::getPrefix )
+{
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getPrefix() ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::setAddress )
@@ -136,16 +134,9 @@ NAN_METHOD( miner::getDiff )
   info.GetReturnValue().Set( Nan::New<v8::Number>( static_cast<double>(MinerState::getDiff()) ) );
 }
 
-NAN_METHOD( miner::getPoolAddress )
+NAN_METHOD( miner::getPoolUrl )
 {
-  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getPoolAddress() ).ToLocalChecked() );
-}
-
-NAN_METHOD( miner::getGpuHashes )
-{
-  char buf[17];
-  sprintf( buf, "%016" PRIx64, MinerState::getPrintableHashCount() );
-  info.GetReturnValue().Set( Nan::New<v8::String>( buf ).ToLocalChecked() );
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getPoolUrl() ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::resetHashCounter )
@@ -166,13 +157,7 @@ NAN_METHOD( miner::incSolCount )
 
 NAN_METHOD( miner::getSolution )
 {
-  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getSolution().c_str() ).ToLocalChecked() );
-}
-
-NAN_METHOD( miner::printStatus )
-{
-  MinerState::printStatus();
-  info.GetReturnValue().SetUndefined();
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getSolution() ).ToLocalChecked() );
 }
 
 NAN_METHOD( miner::log )
@@ -185,9 +170,14 @@ NAN_METHOD( miner::log )
   info.GetReturnValue().SetUndefined();
 }
 
-NAN_METHOD( miner::isInitComplete )
+NAN_METHOD( miner::getTokenName )
 {
-  v8::Local<v8::Boolean> ret = Nan::New(false /*hybridminer->isInitComplete()*/ );
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getTokenName() ).ToLocalChecked() );
+}
+
+NAN_METHOD( miner::getSubmitStale )
+{
+  v8::Local<v8::Boolean> ret = Nan::New( MinerState::getSubmitStale() );
   info.GetReturnValue().Set( ret );
 }
 
@@ -203,23 +193,33 @@ NAN_MODULE_INIT( miner::Init )
        , Nan::New<v8::FunctionTemplate>( stop )->GetFunction() );
 
   Set( target
-       , New<v8::String>( "setHardwareType" ).ToLocalChecked()
-       , New<v8::FunctionTemplate>( setHardwareType )->GetFunction()
-       );
-
-  Set( target
-       , New<v8::String>( "setTarget" ).ToLocalChecked()
-       , New<v8::FunctionTemplate>( setTarget )->GetFunction()
-       );
-
-  Set( target
        , New<v8::String>( "getTarget" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( getTarget )->GetFunction()
        );
 
   Set( target
+       , New<v8::String>( "getChallenge" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getChallenge )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "getPreviousChallenge" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getPreviousChallenge )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "getPoolAddress" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getPoolAddress )->GetFunction()
+       );
+
+  Set( target
        , New<v8::String>( "setPrefix" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( setPrefix )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "getPrefix" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getPrefix )->GetFunction()
        );
 
   Set( target
@@ -248,13 +248,8 @@ NAN_MODULE_INIT( miner::Init )
        );
 
   Set( target
-       , New<v8::String>( "getPoolAddress" ).ToLocalChecked()
-       , New<v8::FunctionTemplate>( getPoolAddress )->GetFunction()
-       );
-
-  Set( target
-       , New<v8::String>( "getGpuHashes" ).ToLocalChecked()
-       , New<v8::FunctionTemplate>( getGpuHashes )->GetFunction()
+       , New<v8::String>( "getPoolUrl" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getPoolUrl )->GetFunction()
        );
 
   Set( target
@@ -273,20 +268,22 @@ NAN_MODULE_INIT( miner::Init )
        );
 
   Set( target
-       , New<v8::String>( "printStatus" ).ToLocalChecked()
-       , New<v8::FunctionTemplate>( printStatus )->GetFunction()
-       );
-
-  Set( target
        , New<v8::String>( "log" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( log )->GetFunction()
        );
 
   Set( target
-       , New<v8::String>( "isInitComplete" ).ToLocalChecked()
-       , New<v8::FunctionTemplate>( isInitComplete )->GetFunction()
+       , New<v8::String>( "getTokenName" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getTokenName )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "getSubmitStale" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getSubmitStale )->GetFunction()
        );
   hybridminer = new HybridMiner;
 
   node::AtExit( cleanup, hybridminer );
 }
+
+NODE_MODULE( node_hybridminer, miner::Init )

@@ -19,7 +19,7 @@ namespace miner
 {
   using namespace Nan;
 
-  ::HybridMiner* hybridminer = nullptr;
+  extern ::HybridMiner* hybridminer;
 
   //call C++ dtors:
   auto cleanup( void* p ) -> void;
@@ -46,28 +46,27 @@ namespace miner
   //  receiving the solution when found
   NAN_METHOD( run );
   NAN_METHOD( stop );
-  NAN_METHOD( setHardwareType );
-  NAN_METHOD( setTarget );
   NAN_METHOD( getTarget );
+  NAN_METHOD( getChallenge );
+  NAN_METHOD( getPreviousChallenge );
+  NAN_METHOD( getPoolAddress );
   NAN_METHOD( setPrefix );
+  NAN_METHOD( getPrefix );
   NAN_METHOD( setAddress );
   NAN_METHOD( getAddress );
   NAN_METHOD( getCustomDiff );
   NAN_METHOD( setDiff );
   NAN_METHOD( getDiff );
-  NAN_METHOD( getPoolAddress );
-  NAN_METHOD( getGpuHashes );
+  NAN_METHOD( getPoolUrl );
   NAN_METHOD( resetHashCounter );
   NAN_METHOD( incSolCount );
   NAN_METHOD( getSolution );
-  NAN_METHOD( printStatus );
   NAN_METHOD( log );
-  NAN_METHOD( isInitComplete );
+  NAN_METHOD( getTokenName );
+  NAN_METHOD( getSubmitStale );
 
   // Defines the functions our add-on will export
   NAN_MODULE_INIT( Init );
-
-  NODE_MODULE( node_hybridminer, Init )
 }
 
 #endif // !_ADDON_H_

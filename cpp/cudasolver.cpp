@@ -4,23 +4,42 @@
 // don't put this in the header . . .
 #include "miner_state.h"
 
-CUDASolver::CUDASolver( int32_t device, double intensity ) noexcept :
+using namespace std::chrono;
+
+CUDASolver::CUDASolver( int32_t const device, double const intensity ) noexcept :
 m_stop( false ),
+m_stopped( false ),
 m_new_target( true ),
 m_new_message( true ),
+m_hash_count( 0u ),
+m_hash_count_samples( 0u ),
+m_hash_average( 0 ),
 m_intensity( intensity <= 41.99 ? intensity : 41.99 ),
 m_threads( static_cast<uint64_t>(std::pow( 2, intensity <= 41.99 ? intensity : 41.99 )) ),
 m_device_failure_count( 0u ),
 m_gpu_initialized( false ),
 m_device( device ),
 m_grid( 1u ),
-m_block( 1u )
+m_block( 1u ),
+m_start( steady_clock::now() )
 {
+  m_run_thread = std::thread( &CUDASolver::findSolution, this );
 }
 
 CUDASolver::~CUDASolver()
 {
+  stopFinding();
+  while( !m_stopped || !m_run_thread.joinable() )
+  {
+    std::this_thread::sleep_for( std::chrono::milliseconds( 50u ) );
+  }
+  m_run_thread.join();
   cudaCleanup();
+}
+
+auto CUDASolver::getHashrate() const -> double const
+{
+  return m_hash_average;
 }
 
 auto CUDASolver::updateTarget() -> void
@@ -38,22 +57,38 @@ auto CUDASolver::stopFinding() -> void
   m_stop = true;
 }
 
-auto CUDASolver::getNextSearchSpace() -> uint64_t
+auto CUDASolver::getNextSearchSpace() -> uint64_t const
 {
+  m_hash_count += m_threads;
+  double t{ static_cast<double>(duration_cast<milliseconds>(steady_clock::now() - m_start).count()) / 1000 };
+
+  if( m_hash_count_samples < 100 )
+  {
+    ++m_hash_count_samples;
+  }
+
+  double temp_average{ m_hash_average };
+  temp_average += ((m_hash_count / t) / 1000000 - temp_average) / m_hash_count_samples;
+  if( std::isnan( temp_average ) || std::isinf( temp_average ) )
+  {
+    temp_average = m_hash_average;
+  }
+  m_hash_average = temp_average;
   return MinerState::getIncSearchSpace( m_threads );
 }
 
-auto CUDASolver::getTarget() -> uint64_t
+auto CUDASolver::getTarget() const -> uint64_t const
 {
-  return MinerState::getTarget();
+  return MinerState::getTargetNum();
 }
 
-auto CUDASolver::getMidstate( uint64_t (& message)[25] ) -> void
+auto CUDASolver::getMidstate() const -> state_t const
 {
-  MinerState::getMidstate( message, m_device );
+  return MinerState::getMidstate();
 }
 
 auto CUDASolver::pushSolution() -> void
 {
-  MinerState::pushSolution( *h_solution );
+  for( uint_fast32_t i{ 0 }; i < *h_solution_count; ++i )
+    MinerState::pushSolution( h_solutions[i] );
 }

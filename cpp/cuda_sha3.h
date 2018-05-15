@@ -3,19 +3,6 @@
 
 #define TPB50 1024u
 #define TPB35 384u
-#define NPT 2
-
-#include <stdio.h>
-#include <stdint.h>
-//#include <inttypes.h>
-#include <cuda_runtime.h>
-
-#if defined(_MSC_VER)
-#  include <process.h>
-#else
-#  include <sys/types.h>
-#  include <unistd.h>
-#endif
 
 #ifdef __INTELLISENSE__
  /* reduce vstudio warnings (__byteperm, blockIdx...) */
@@ -32,8 +19,5 @@
 
 #define ROTL64(x, y) (((x) << (y)) ^ ((x) >> (64 - (y))))
 #define ROTR64(x, y) (((x) >> (y)) ^ ((x) << (64 - (y))))
-
-__global__
-void cuda_mine( uint64_t* solution, uint64_t cnt );
 
 #endif // !_SOLVER_H_

@@ -1,16 +1,42 @@
+#include <cstdlib>
 #include <fstream>
+#include "addon.h"
 #include "hybridminer.h"
 #include "json.hpp"
+
+using namespace std::chrono;
+
+void ExitHandler()
+{
+  miner::cleanup( miner::hybridminer );
+}
 
 #ifdef _MSC_VER
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
+
+BOOL WINAPI SignalHandler( DWORD dwSig )
+{
+  if( dwSig == CTRL_C_EVENT || dwSig == CTRL_BREAK_EVENT || dwSig == CTRL_CLOSE_EVENT )
+  {
+    // miner::hybridminer->stop();
+    // miner::cleanup( miner::hybridminer );
+    std::exit( EXIT_SUCCESS );
+    // return FALSE;
+  }
+  return FALSE;
+}
+#else
+#  include <signal.h>
+
+void SignalHandler( int signal )
+{
+  // miner::cleanup( miner::hybridminer );
+  std::exit( EXIT_SUCCESS );
+}
 #endif // _MSC_VER
 
-uint32_t constexpr DEFAULT_INTENSITY{ 23 };
-
 HybridMiner::HybridMiner() noexcept :
-m_init_complete( false ),
 m_old_ui( []() -> bool
           {
 #ifdef _MSC_VER
@@ -35,187 +61,109 @@ m_old_ui( []() -> bool
           }() )
 {
   MinerState::initState();
+
+  std::atexit( ExitHandler );
+
+#ifdef _MSC_VER
+  SetConsoleTitleA( (std::string("0xBitcoin Miner v") + std::string(MINER_VERSION)).c_str() );
+  SetConsoleCtrlHandler( SignalHandler, TRUE );
+#else
+  struct sigaction sig_handler;
+
+  sig_handler.sa_handler = &SignalHandler;
+
+  sigemptyset( &sig_handler.sa_mask );
+
+  sigaddset( &sig_handler, SIGINT );
+  sigaddset( &sig_handler, SIGBREAK );
+  sigaddset( &sig_handler, SIGTERM );
+  sigaddset( &sig_handler, SIGHUP );
+  sigaddset( &sig_handler, SIGQUIT );
+
+  sigaction( SIGINT,   &sig_handler, NULL );
+  sigaction( SIGBREAK, &sig_handler, NULL );
+  sigaction( SIGTERM,  &sig_handler, NULL );
+  sigaction( SIGHUP,   &sig_handler, NULL );
+  sigaction( SIGQUIT,  &sig_handler, NULL );
+#endif // _MSC_VER
 }
 
 HybridMiner::~HybridMiner()
 {
   stop();
-
-  // Wait for run() to terminate
-  //  This is not very clean but it's the easiest portable way to
-  //  exit gracefully if stop() has not been called before the destructor.
-  std::this_thread::yield();
-  for( auto&& thr : m_threads )
-  {
-    if( !thr.joinable() )
-      std::this_thread::sleep_for( std::chrono::milliseconds( 50u ) );
-  }
-}
-
-//set the hardware type to 'cpu' or 'gpu'
-auto HybridMiner::setHardwareType( std::string const& hardwareType ) -> void
-{
-  m_hardwareType = hardwareType;
 }
 
 auto HybridMiner::updateTarget() const -> void
 {
-  if( isUsingCuda() )
+  for( auto&& solver : cudaSolvers )
   {
-    set( &CUDASolver::updateTarget );
+    solver->updateTarget();
   }
 }
 
 auto HybridMiner::updateMessage() const -> void
 {
-  if( isUsingCuda() )
+  for( auto&& solver : cudaSolvers )
   {
-    set( &CUDASolver::updateMessage );
+    solver->updateMessage();
   }
 }
 
 // This is a the "main" thread of execution
 auto HybridMiner::run() -> void
 {
-#ifdef _MSC_VER
-  SetConsoleTitle((std::string("0xBitcoin Miner v") + std::string(MINER_VERSION)).c_str());
-#endif // _MSC_VER
+  startMining();
 
-  std::ifstream in("0xbitcoin.json");
-  if( !in )
+  printUiBase();
+
+  do {
+    auto timerNext = steady_clock::now() + 100ms;
+
+    MinerState::printStatus();
+
+    std::this_thread::sleep_until( timerNext );
+  } while( !m_stop );
+
+  std::cerr << MinerState::getPrintableTimeStamp() << "Process exiting... stopping miner\n";
+  if( !m_old_ui )
   {
-    std::cerr << "Unable to open configuration file '0xbitcoin.json'.\n";
-    std::exit( EXIT_FAILURE );
+    std::cerr << "\x1b[s\x1b[?25h\x1b[r\x1b[u";
   }
+}
 
-  nlohmann::json jsConf;
-  in >> jsConf;
-  in.close();
-
-  if( jsConf.find( "address" ) == jsConf.end() || jsConf["address"].get<std::string>().length() != 42 )
+auto HybridMiner::startMining() -> void
+{
+  for( auto& device : MinerState::getCudaDevices() )
   {
-    std::cerr << "No valid wallet address set in configuration - how are you supposed to get paid?\n";
-    std::exit( EXIT_FAILURE );
+    cudaSolvers.push_back( std::make_unique<CUDASolver>( device.first,
+                                                         device.second ) );
   }
-  if( jsConf.find( "pool" ) == jsConf.end() || jsConf["pool"].get<std::string>().length() < 15 )
+  for( uint_fast64_t i{ 0 }; i < MinerState::getCpuThreads(); ++i )
   {
-    std::cerr << "No pool address set in configuration - this isn't a solo miner!\n";
-    std::exit( EXIT_FAILURE );
-  }
-
-  MinerState::setAddress( jsConf["address"] );
-  MinerState::setPoolAddress( jsConf["pool"] );
-  if( jsConf.find( "customdiff" ) != jsConf.end() && jsConf["customdiff"] > 0u )
-  {
-    MinerState::setCustomDiff( jsConf["customdiff"] );
-  }
-
-  if( isUsingCuda() )
-  {
-    int32_t device_count;
-    cudaGetDeviceCount( &device_count );
-
-    if( jsConf.find( "cuda" ) != jsConf.end() && jsConf["cuda"].size() > 0u )
-    {
-      for( auto& device : jsConf["cuda"] )
-      {
-        if( device["enabled"] && device["device"] < device_count )
-        {
-          cudaSolvers.push_back( std::make_unique<CUDASolver>( device["device"],
-                                                               device["intensity"] ) );
-        }
-      }
-    }
-    else
-    {
-      for( int_fast32_t i{ 0u }; i < device_count; ++i )
-      {
-        cudaSolvers.push_back( std::make_unique<CUDASolver>( i, DEFAULT_INTENSITY ) );
-      }
-    }
-
-    for( const auto& solver : cudaSolvers )
-    {
-      m_threads.emplace_back( [&] { solver->findSolution(); } );
-    }
-  }
-  else
-  {
-    if( jsConf.find( "threads" ) != jsConf.end() && jsConf["threads"] > 0u )
-    {
-      for( uint_fast32_t i{ 0u }; i < jsConf["threads"]; ++i)
-      {
-        m_solvers.push_back( std::make_unique<CPUSolver>() );
-      }
-    }
-    else
-    {
-      for( uint_fast32_t i{ 0u }; i < std::thread::hardware_concurrency() - 1; ++i )
-      {
-        m_solvers.push_back( std::make_unique<CPUSolver>() );
-      }
-    }
-
-    // These are the Solver threads
-    for( const auto& solver : m_solvers )
-    {
-      m_threads.emplace_back( [&] { solver->findSolution(); } );
-    }
-  }
-
-  m_threads.emplace_back( [&] {
-      using namespace std::chrono;
-
-      this->printUiBase();
-
-      do {
-        auto timerNext = steady_clock::now() + 100ms;
-
-        MinerState::printStatus();
-
-        std::this_thread::sleep_until( timerNext );
-      } while( true );
-    } );
-
-  m_init_complete = true;
-
-  for( auto&& thr : m_threads )
-  {
-    thr.join();
+    cpuSolvers.push_back( std::make_unique<CPUSolver>() );
   }
 }
 
 auto HybridMiner::stop() -> void
 {
-  if( isUsingCuda() )
-  {
-    for( auto&& i : cudaSolvers )
-      ( (*i).*(&CUDASolver::stopFinding) )();
-  }
-  else
-  {
-    for( auto&& i : m_solvers )
-      ( (*i).*(&CPUSolver::stopFinding) )();
-  }
+  m_stop = true;
+
+  cudaSolvers.clear();
+  cpuSolvers.clear();
 }
 
-// //edit a variable within each of the solvers
-// void HybridMiner::set( void ( CPUSolver::*fn )( std::string const& ), std::string const& p ) const
-// {
-//   for( auto&& i : m_solvers )
-//     ( (*i).*fn )( p );
-// }
-
-//edit a variable within each of the solvers
-auto HybridMiner::set( void ( CUDASolver::*fn )() ) const -> void
+auto HybridMiner::getHashrates() const -> double const
 {
-  for( auto&& i : cudaSolvers )
-    ( (*i).*fn )();
-}
-
-auto HybridMiner::isUsingCuda() const -> bool
-{
-  return m_hardwareType == "cuda";
+  double temp{ 0 };
+  for( auto&& solver : cpuSolvers )
+  {
+    temp += solver->getHashrate();
+  }
+  for( auto&& solver : cudaSolvers )
+  {
+    temp += solver->getHashrate();
+  }
+  return temp;
 }
 
 auto HybridMiner::printUiBase() const -> void
@@ -240,11 +188,8 @@ auto HybridMiner::printUiBase() const -> void
               << "\x1b[5r\x1b[5;1f\x1b[?25h";
   }
 
-  std::cout << "Mining on " << cudaSolvers.size() << " GPUs using CUDA.\n"
+  std::cout << MinerState::getPrintableTimeStamp()
+            << "Mining on " << cudaSolvers.size()
+            << " GPU" << (cudaSolvers.size() > 1 ? "s" : "") << " using CUDA.\n"
             << (m_old_ui ? '\n' : '\r');
-}
-
-auto HybridMiner::isInitComplete() const -> bool
-{
-  return m_init_complete;
 }

@@ -17,7 +17,10 @@
         "cpp/sha3.c",
 #        "cpp/keccak.c",
         "cpp/cudasolver.cpp",
-        "cpp/cuda_sha3.cu"
+        "cpp/cuda_sha3.cu",
+        "cpp/BigInt/BigIntegerUtils.cc",
+        "cpp/BigInt/BigUnsigned.cc",
+        "cpp/BigInt/BigUnsignedInABase.cc"
       ],
       'cflags_cc!': ['-std=gnu++0x'],
       'cflags_cc+': [ '-march=native', '-O3', '-std=c++14', '-Wall' ],

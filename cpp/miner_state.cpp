@@ -1,5 +1,7 @@
 #include <fstream>
+#include <cuda_runtime.h>
 #include "miner_state.h"
+#include "addon.h"
 
 // #define SPH_KECCAK_64 1
 // #include "sph_keccak.h"
@@ -8,6 +10,8 @@
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
 #endif // _MSC_VER
+
+using namespace std::chrono;
 
 static char constexpr ascii[][3] = {
   "00","01","02","03","04","05","06","07","08","09","0a","0b","0c","0d","0e","0f",
@@ -63,13 +67,11 @@ static auto HexToBytes( std::string const hex, uint8_t bytes[] ) -> void
 
 std::mutex MinerState::m_solutions_mutex;
 std::queue<uint64_t> MinerState::m_solutions_queue;
-std::string MinerState::m_solution_start;
-std::string MinerState::m_solution_end;
+hash_t MinerState::m_solution;
 std::atomic<uint64_t> MinerState::m_hash_count{ 0ull };
 std::atomic<uint64_t> MinerState::m_hash_count_printable{ 0ull };
-std::atomic<uint64_t> MinerState::m_hash_count_samples{ 0ull };
-std::atomic<double> MinerState::m_hash_average{ 0.0 };
-MinerState::bytes_t MinerState::m_message( MESSAGE_LENGTH );
+message_t MinerState::m_message;
+address_t MinerState::m_challenge_old;
 std::mutex MinerState::m_message_mutex;
 std::atomic<uint64_t> m_sol_count{ 0ull };
 std::mutex MinerState::m_print_mutex;
@@ -77,24 +79,107 @@ std::queue<std::string> MinerState::m_log;
 std::mutex MinerState::m_log_mutex;
 std::string MinerState::m_challenge_printable;
 std::string MinerState::m_address_printable;
-std::atomic<uint64_t> MinerState::m_target{ 0ull };
+std::atomic<uint64_t> MinerState::m_target_num{ 0ull };
+BigUnsigned MinerState::m_target{ 0ul };
+BigUnsigned MinerState::m_maximum_target{ 1ul };
+std::mutex MinerState::m_target_mutex;
 std::atomic<bool> MinerState::m_custom_diff{ false };
 std::atomic<uint64_t> MinerState::m_diff{ 1ull };
 std::atomic<uint64_t> MinerState::m_sol_count{ 0ull };
 std::atomic<bool> MinerState::m_new_solution{ false };
 std::string MinerState::m_address;
 std::mutex MinerState::m_address_mutex;
-std::string MinerState::m_pool_address;
-std::mutex MinerState::m_pool_mutex;
-std::chrono::steady_clock::time_point MinerState::m_start;
-std::chrono::steady_clock::time_point MinerState::m_end;
-std::chrono::steady_clock::time_point MinerState::m_round_start;
+std::string MinerState::m_pool_url;
+std::mutex MinerState::m_pool_url_mutex;
+steady_clock::time_point MinerState::m_start;
+steady_clock::time_point MinerState::m_end;
+steady_clock::time_point MinerState::m_round_start;
 std::atomic<bool> MinerState::m_old_ui{ false };
+std::vector<std::pair<int32_t, double>> MinerState::m_cuda_devices;
+std::atomic<uint32_t> MinerState::m_cpu_threads{ 0ul };
+nlohmann::json MinerState::m_json_config;
+std::string MinerState::m_token_name{ "0xBTC" };
+std::atomic<bool> MinerState::m_submit_stale{ false };
 
 auto MinerState::initState() -> void
 {
-  bytes_t temp_solution( MESSAGE_LENGTH );
-  reinterpret_cast<uint64_t&>(temp_solution[0]) = 06055134500533075101ull;
+  std::ifstream in("0xbitcoin.json");
+  if( !in )
+  {
+    std::cerr << "Unable to open configuration file '0xbitcoin.json'.\n";
+    std::exit( EXIT_FAILURE );
+  }
+
+  in >> m_json_config;
+  in.close();
+
+  if( m_json_config.find( "address" ) == m_json_config.end() ||
+      m_json_config["address"].get<std::string>().length() != 42 )
+  {
+    std::cerr << "No valid wallet address set in configuration - how are you supposed to get paid?\n";
+    std::exit( EXIT_FAILURE );
+  }
+  if( m_json_config.find( "pool" ) == m_json_config.end() ||
+      m_json_config["pool"].get<std::string>().length() < 15 )
+  {
+    std::cerr << "No pool address set in configuration - this isn't a solo miner!\n";
+    std::exit( EXIT_FAILURE );
+  }
+
+  MinerState::setAddress( m_json_config["address"] );
+  MinerState::setPoolUrl( m_json_config["pool"] );
+
+  if( m_json_config.find( "customdiff" ) != m_json_config.end() &&
+      m_json_config["customdiff"].get<double>() > 0u )
+  {
+    MinerState::setCustomDiff( m_json_config["customdiff"] );
+  }
+
+  if( m_json_config.find( "token" ) != m_json_config.end() &&
+      m_json_config["token"].get<std::string>().length() > 0u )
+  {
+    MinerState::setTokenName( m_json_config["token"].get<std::string>() );
+  }
+  m_maximum_target <<= 234;
+
+  if( m_json_config.find( "submitstale" ) != m_json_config.end() &&
+      m_json_config["submitstale"].is_boolean() )
+  {
+    MinerState::setSubmitStale( m_json_config["submitstale"].get<bool>() );
+  }
+
+  int32_t device_count;
+  cudaGetDeviceCount( &device_count );
+
+  if( m_json_config.find( "cuda" ) != m_json_config.end() && m_json_config["cuda"].size() > 0u )
+  {
+    for( auto& device : m_json_config["cuda"] )
+    {
+      if( (device.find( "enabled" ) != device.end() && device["enabled"]) &&
+          (device.find( "device" ) != device.end() && device["device"].get<int32_t>() < device_count) )
+      {
+        m_cuda_devices.emplace_back( device["device"],
+                                     (device.find( "intensity" ) != device.end()
+                                      ? device["intensity"]
+                                      :  DEFAULT_INTENSITY) );
+      }
+    }
+  }
+  else
+  {
+    for( int_fast32_t i{ 0u }; i < device_count; ++i )
+    {
+      m_cuda_devices.emplace_back( i, DEFAULT_INTENSITY );
+    }
+  }
+
+  if( m_json_config.find( "threads" ) != m_json_config.end() &&
+      m_json_config["threads"].get<uint32_t>() > 0)
+  {
+    m_cpu_threads = m_json_config["threads"].get<uint32_t>();
+  }
+
+  reinterpret_cast<uint64_t&>(m_solution[0]) = 06055134500533075101ull;
 
   std::random_device r;
   std::mt19937_64 gen{ r() };
@@ -102,7 +187,7 @@ auto MinerState::initState() -> void
 
   for( uint_fast8_t i_rand{ 8 }; i_rand < 32; i_rand += 8 )
   {
-    reinterpret_cast<uint64_t&>(temp_solution[i_rand]) = urInt( gen );
+    reinterpret_cast<uint64_t&>(m_solution[i_rand]) = urInt( gen );
   }
 
   // Default init (false) is fine for non-Windows plats
@@ -129,25 +214,22 @@ auto MinerState::initState() -> void
     }();
 #endif // _MSC_VER
 
-  std::memset( &temp_solution[12], 0, 8 );
+  std::memset( &m_solution[12], 0, 8 );
 
-  m_message_mutex.lock();
-  std::memcpy( &m_message[52], temp_solution.data(), 32 );
-  m_message_mutex.unlock();
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( &m_message[52], m_solution.data(), 32 );
+  }
 
-  std::string str_solution{ bytesToString( temp_solution ) };
+  std::string str_solution{ bytesToString( m_solution ) };
 
-  m_solution_start = str_solution.substr( 0, 24 );
-  m_solution_end = str_solution.substr( 40, 24 );
-
-  m_start = std::chrono::steady_clock::now();
-  m_round_start = std::chrono::steady_clock::now();
+  m_start = steady_clock::now();
+  m_round_start = steady_clock::now();
 }
 
-auto MinerState::getIncSearchSpace( uint64_t const threads ) -> uint64_t
+auto MinerState::getIncSearchSpace( uint64_t const threads ) -> uint64_t const
 {
   m_hash_count_printable += threads;
-
   return m_hash_count.fetch_add( threads, std::memory_order_seq_cst );
 }
 
@@ -155,30 +237,14 @@ auto MinerState::resetCounter() -> void
 {
   m_hash_count_printable = 0ull;
 
-  m_round_start = std::chrono::steady_clock::now();
+  m_round_start = steady_clock::now();
 }
 
 auto MinerState::printStatus() -> void
 {
-  using namespace std::chrono;
+  if( m_hash_count <= 0 ) return;
 
-  if( m_hash_count_printable <= 0 ) return;
-
-  double t{ static_cast<double>(duration_cast<milliseconds>(steady_clock::now() - m_start).count()) / 1000 };
-  double t2{ static_cast<double>(duration_cast<milliseconds>(steady_clock::now() - m_round_start).count()) / 1000 };
-
-  if( m_hash_count_samples < 100 )
-  {
-    ++m_hash_count_samples;
-  }
-
-  double temp_average{ m_hash_average };
-  temp_average += ((m_hash_count / t) / 1000000 - temp_average) / m_hash_count_samples;
-  if( std::isnan( temp_average ) || std::isinf( temp_average ) )
-  {
-    temp_average = m_hash_average;
-  }
-  m_hash_average = temp_average;
+  double timer{ static_cast<double>(duration_cast<milliseconds>(steady_clock::now() - m_round_start).count()) / 1000 };
 
   std::stringstream ss_out;
 
@@ -194,14 +260,14 @@ auto MinerState::printStatus() -> void
 
     ss_out << getPrintableTimeStamp()
            << std::setw( 10 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-           << temp_average
+           << miner::hybridminer->getHashrates()
            << " MH/s  Sols:"
            << std::setw( 6 ) << std::setfill( ' ' ) << m_sol_count
            << (m_new_solution ? '^' : ' ')
            << " Search time: "
-           << std::fixed << std::setprecision( 0 )
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t2/60) << ":"
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t2, 60 ) )
+           << std::fixed << std::setprecision( 0 ) << std::setfill( '0' )
+           << std::setw( 2 ) << std::floor( timer / 60 ) << ":"
+           << std::setw( 2 ) << std::floor( std::fmod( timer, 60 ) )
            << '\n';
 
     m_new_solution = false;
@@ -211,21 +277,22 @@ auto MinerState::printStatus() -> void
     // maybe breaking the control codes into macros is a good idea . . .
     ss_out << "\x1b[s\x1b[?25l\x1b[2;22f\x1b[38;5;221m"
            << std::setw( 8 ) << std::setfill( ' ' ) << std::fixed << std::setprecision( 2 )
-           << temp_average
+           << miner::hybridminer->getHashrates()
            << "\x1b[2;75f\x1b[38;5;33m"
-           << std::fixed << std::setprecision( 0 )
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor(t2/60) << ":"
-           << std::setw( 2 ) << std::setfill( '0' ) << std::floor( std::fmod( t2, 60 ) )
+           << std::fixed << std::setprecision( 0 ) << std::setfill( '0' )
+           << std::setw( 2 ) << std::floor( timer / 60 ) << ":"
+           << std::setw( 2 ) << std::floor( std::fmod( timer, 60 ) )
            << "\x1b[3;14f\x1b[38;5;34m"
            << m_diff
            << "\x1b[3;22f\x1b[38;5;221m"
            << std::setw( 8 ) << std::setfill( ' ' ) << m_sol_count
            << "\x1b[3;72f\x1b[38;5;33m";
-    m_print_mutex.lock();
-    ss_out << m_address_printable
-           <<"\x1b[2;13f\x1b[38;5;34m"
-           <<  m_challenge_printable;
-    m_print_mutex.unlock();
+    {
+      guard lock(m_print_mutex);
+      ss_out << m_address_printable
+             <<"\x1b[2;13f\x1b[38;5;34m"
+             <<  m_challenge_printable;
+    }
     ss_out.imbue( std::locale( "" ) );
     ss_out << "\x1b[3;36f\x1b[38;5;208m"
            << std::setw( 25 ) << m_hash_count_printable;
@@ -239,35 +306,29 @@ auto MinerState::getLog() -> std::string const
 {
   std::stringstream ss_log;
 
-  m_log_mutex.lock();
-  if( m_log.size() == 0 )
   {
-    // awkward, but consistent
-    m_log_mutex.unlock();
-    return "";
-  }
+    guard lock(m_log_mutex);
 
-  for( uint_fast8_t i{ 0 }; i < 5 && m_log.size() != 0; ++i )
-  {
-    ss_log << m_log.front();
-    m_log.pop();
+    if( m_log.size() == 0 ) return "";
+
+    for( uint_fast8_t i{ 0 }; i < 5 && m_log.size() != 0; ++i )
+    {
+      ss_log << m_log.front();
+      m_log.pop();
+    }
   }
-  m_log_mutex.unlock();
 
   return ss_log.str();
 }
 
 auto MinerState::pushLog( std::string message ) -> void
 {
-  m_log_mutex.lock();
+  guard lock(m_log_mutex);
   m_log.push( getPrintableTimeStamp() + message + '\n' );
-  m_log_mutex.unlock();
 }
 
 auto MinerState::getPrintableTimeStamp() -> std::string const
 {
-  using namespace std::chrono;
-
   std::stringstream ss_ts;
 
   auto now{ system_clock::now() };
@@ -288,29 +349,22 @@ auto MinerState::getPrintableHashCount() -> uint64_t
   return m_hash_count_printable;
 }
 
-auto MinerState::hexStr( uint8_t const* data, int32_t const len ) -> std::string
-{
-  std::stringstream ss;
-  ss << std::hex;
-  for( int_fast32_t i{ 0 }; i < len; ++i )
-    ss << std::setw( 2 ) << std::setfill( '0' ) << data[i];
-  return ss.str();
-}
-
-auto MinerState::hexToBytes( std::string const hex, bytes_t& bytes ) -> void
+template<typename T>
+auto MinerState::hexToBytes( std::string const hex, T& bytes ) -> void
 {
   assert( hex.length() % 2 == 0 );
   // assert( bytes.size() == ( hex.length() / 2 - 1 ) );
   HexToBytes( hex.substr( 2 ), &bytes[0] );
 }
 
-auto MinerState::bytesToString( bytes_t const buffer ) -> std::string
+template<typename T>
+auto MinerState::bytesToString( T const buffer ) -> std::string const
 {
   std::string output;
   output.reserve( buffer.size() * 2 + 1 );
 
-  for( uint_fast32_t i{ 0 }; i < buffer.size(); ++i )
-    output += ascii[buffer[i]];
+  for( auto byte : buffer )
+    output += ascii[byte];
 
   return output;
 }
@@ -320,23 +374,23 @@ auto MinerState::getSolution() -> std::string const
   if( m_solutions_queue.empty() )
     return "";
 
-  uint64_t ret;
-  bytes_t buf( 8 );
+  uint64_t temp;
+  hash_t ret{ m_solution };
 
-  m_solutions_mutex.lock();
-  ret = m_solutions_queue.front();
-  m_solutions_queue.pop();
-  m_solutions_mutex.unlock();
+  {
+    guard lock(m_solutions_mutex);
+    temp = m_solutions_queue.front();
+    m_solutions_queue.pop();
+  }
 
-  std::memcpy( buf.data(), &ret, 8 );
-  return m_solution_start + bytesToString( buf ) + m_solution_end;
+  std::memcpy( &ret[12], &temp, 8 );
+  return bytesToString( ret );
 }
 
 auto MinerState::pushSolution( uint64_t const sol ) -> void
 {
-  m_solutions_mutex.lock();
+  guard lock(m_solutions_mutex);
   m_solutions_queue.push( sol );
-  m_solutions_mutex.unlock();
 }
 
 auto MinerState::incSolCount( uint64_t const count ) -> void
@@ -354,48 +408,117 @@ auto MinerState::setPrefix( std::string const prefix ) -> void
 {
   assert( prefix.length() == ( PREFIX_LENGTH * 2 + 2 ) );
 
-  bytes_t temp( 52 );
+  message_t temp;
   hexToBytes( prefix, temp );
+  std::memcpy( &temp[52], m_solution.data(), 32 );
 
-  m_message_mutex.lock();
-  std::memcpy( m_message.data(), temp.data(), 52 );
-  m_message_mutex.unlock();
+  if( temp == m_message ) return;
 
-  m_print_mutex.lock();
-  m_challenge_printable = prefix.substr( 2, 8 );
-  m_print_mutex.unlock();
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( m_challenge_old.data(), m_message.data(), 32 );
+    std::memcpy( m_message.data(), temp.data(), 52 );
+  }
+
+  {
+    guard lock(m_print_mutex);
+    m_challenge_printable = prefix.substr( 2, 8 );
+  }
 }
 
-auto MinerState::setTarget( std::string const target ) -> void
+auto MinerState::getPrefix() -> std::string const
+{
+  prefix_t temp;
+
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( temp.data(), m_message.data(), 52 );
+  }
+
+  return bytesToString( temp );
+}
+
+auto MinerState::getChallenge() -> std::string const
+{
+  hash_t temp;
+
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( temp.data(), m_message.data(), 32 );
+  }
+
+  return bytesToString( temp );
+}
+
+auto MinerState::getPreviousChallenge() -> std::string const
+{
+  hash_t temp;
+
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( temp.data(), m_challenge_old.data(), 32 );
+  }
+
+  return bytesToString( temp );
+}
+
+auto MinerState::getPoolAddress() -> std::string const
+{
+  address_t temp;
+
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( temp.data(), &m_message[32], 20 );
+  }
+
+  return bytesToString( temp );
+}
+
+auto MinerState::setTarget( std::string target ) -> void
 {
   assert( target.length() <= ( UINT256_LENGTH * 2 + 2 ) );
 
-  std::string const t( static_cast<std::string::size_type>( UINT256_LENGTH * 2 + 2 ) - target.length(), '0' );
+  BigUnsigned temp{ BigUnsignedInABase( target.substr( 2 ), 16 ) };
 
-  uint64_t temp{ std::stoull( (t + target.substr( 2 )).substr( 0, 16 ), nullptr, 16 ) };
   if( temp == m_target ) return;
 
-  m_target = temp;
+  {
+    guard lock(m_target_mutex);
+    m_target = temp;
+  }
+
+  std::string const t( static_cast<std::string::size_type>( UINT256_LENGTH * 2 + 2 ) - target.length(), '0' );
+
+  uint64_t temp_num{ std::stoull( (t + target.substr( 2 )).substr( 0, 16 ), nullptr, 16 ) };
+
+  m_target_num = temp_num;
 }
 
-auto MinerState::getMessage( uint64_t const device ) -> bytes_t const
+auto MinerState::getTarget() -> BigUnsigned const
 {
-  m_message_mutex.lock();
-  bytes_t temp = m_message;
-  m_message_mutex.unlock();
-
-  return temp;
+  guard lock(m_target_mutex);
+  return m_target;
 }
 
-auto MinerState::getMidstate( uint64_t (& message_out)[25], uint64_t const device ) -> void
+auto MinerState::getTargetNum() -> uint64_t const
 {
-  m_message_mutex.lock();
-  bytes_t temp = m_message;
-  m_message_mutex.unlock();
+  return m_target_num;
+}
 
+auto MinerState::getMessage() -> message_t const
+{
+  guard lock(m_message_mutex);
+  return m_message;
+}
+
+auto MinerState::getMidstate() -> state_t const
+{
   uint64_t message[11]{ 0 };
 
-  std::memcpy( message, temp.data(), 84 );
+  {
+    guard lock(m_message_mutex);
+    std::memcpy( message, m_message.data(), 84 );
+  }
 
   uint64_t C[5], D[5], mid[25];
   C[0] = message[0] ^ message[5] ^ message[10] ^ 0x100000000ull;
@@ -436,36 +559,37 @@ auto MinerState::getMidstate( uint64_t (& message_out)[25], uint64_t const devic
   mid[23] = ROTL64(D[0], 41);
   mid[24] = ROTL64(D[1],  2);
 
-  std::memcpy( message_out, mid, 200 );
-}
-
-auto MinerState::getTarget() -> uint64_t const
-{
-  return m_target;
+  state_t ret;
+  std::memcpy( ret.data(), mid, 200 );
+  return ret;
 }
 
 auto MinerState::setAddress( std::string const address ) -> void
 {
-  m_address_mutex.lock();
-  m_address = address;
-  m_address_mutex.unlock();
-  m_print_mutex.lock();
-  m_address_printable = address.substr( 0, 8 );
-  m_print_mutex.unlock();
+  {
+    guard lock(m_address_mutex);
+    m_address = address;
+  }
+  {
+    guard lock(m_print_mutex);
+    m_address_printable = address.substr( 0, 8 );
+  }
 }
 
 auto MinerState::getAddress() -> std::string const
 {
-  m_address_mutex.lock();
-  std::string ret = m_address;
-  m_address_mutex.unlock();
-  return ret;
+  guard lock(m_address_mutex);
+  return m_address;
 }
 
 auto MinerState::setCustomDiff( uint64_t const diff ) -> void
 {
   m_custom_diff = true;
   m_diff = diff;
+  BigUnsigned temp{ 1 };
+  temp <<= 234;
+  temp /= diff;
+  setTarget( std::string("0x") + std::string(BigUnsignedInABase( temp, 16 )) );
 }
 
 auto MinerState::getCustomDiff() -> bool const
@@ -476,6 +600,10 @@ auto MinerState::getCustomDiff() -> bool const
 auto MinerState::setDiff( uint64_t const diff ) -> void
 {
   m_diff = diff;
+  BigUnsigned temp{ 1 };
+  temp <<= 234;
+  temp /= diff;
+  setTarget( std::string("0x") + std::string(BigUnsignedInABase( temp, 16 )) );
 }
 
 auto MinerState::getDiff() -> uint64_t const
@@ -483,7 +611,7 @@ auto MinerState::getDiff() -> uint64_t const
   return m_diff;
 }
 
-auto MinerState::setPoolAddress( std::string const pool ) -> void
+auto MinerState::setPoolUrl( std::string const pool ) -> void
 {
   if( pool.find( "mine0xbtc.eu" ) != std::string::npos )
   {
@@ -491,15 +619,44 @@ auto MinerState::setPoolAddress( std::string const pool ) -> void
               << "Please select a different pool to mine on.\n";
     std::exit( EXIT_FAILURE );
   }
-  m_pool_mutex.lock();
-  m_pool_address = pool;
-  m_pool_mutex.unlock();
+  {
+    guard lock(m_pool_url_mutex);
+    m_pool_url = pool;
+  }
 }
 
-auto MinerState::getPoolAddress() -> std::string const
+auto MinerState::getPoolUrl() -> std::string const
 {
-  m_pool_mutex.lock();
-  std::string ret = m_pool_address;
-  m_pool_mutex.unlock();
-  return ret;
+  guard lock(m_pool_url_mutex);
+  return m_pool_url;
+}
+
+auto MinerState::getCudaDevices() -> std::vector<std::pair<int32_t, double>> const
+{
+  return m_cuda_devices;
+}
+
+auto MinerState::getCpuThreads() -> uint64_t const
+{
+  return m_cpu_threads;
+}
+
+auto MinerState::setTokenName( std::string const token ) -> void
+{
+  m_token_name = token;
+}
+
+auto MinerState::getTokenName() -> std::string const
+{
+  return m_token_name;
+}
+
+auto MinerState::setSubmitStale( bool const submitStale ) -> void
+{
+  m_submit_stale = submitStale;
+}
+
+auto MinerState::getSubmitStale() -> bool const
+{
+  return m_submit_stale;
 }
