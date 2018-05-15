@@ -74,14 +74,12 @@ m_old_ui( []() -> bool
 
   sigemptyset( &sig_handler.sa_mask );
 
-  sigaddset( &sig_handler, SIGINT );
-  sigaddset( &sig_handler, SIGBREAK );
-  sigaddset( &sig_handler, SIGTERM );
-  sigaddset( &sig_handler, SIGHUP );
-  sigaddset( &sig_handler, SIGQUIT );
+  sigaddset( &sig_handler.sa_mask, SIGINT );
+  sigaddset( &sig_handler.sa_mask, SIGTERM );
+  sigaddset( &sig_handler.sa_mask, SIGHUP );
+  sigaddset( &sig_handler.sa_mask, SIGQUIT );
 
   sigaction( SIGINT,   &sig_handler, NULL );
-  sigaction( SIGBREAK, &sig_handler, NULL );
   sigaction( SIGTERM,  &sig_handler, NULL );
   sigaction( SIGHUP,   &sig_handler, NULL );
   sigaction( SIGQUIT,  &sig_handler, NULL );

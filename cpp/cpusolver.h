@@ -2,6 +2,7 @@
 #define _CPUSOLVER_H_
 
 #include <atomic>
+#include <thread>
 
 #include "miner_state.h"
 

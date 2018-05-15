@@ -93,7 +93,7 @@ private:
 
   static state_t m_midstate;
   static message_t m_message;
-  static address_t m_challenge_old;
+  static hash_t m_challenge_old;
   static std::mutex m_message_mutex;
 
   static std::atomic<uint64_t> m_target_num;

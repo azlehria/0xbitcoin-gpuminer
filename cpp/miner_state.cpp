@@ -71,7 +71,7 @@ hash_t MinerState::m_solution;
 std::atomic<uint64_t> MinerState::m_hash_count{ 0ull };
 std::atomic<uint64_t> MinerState::m_hash_count_printable{ 0ull };
 message_t MinerState::m_message;
-address_t MinerState::m_challenge_old;
+hash_t MinerState::m_challenge_old;
 std::mutex MinerState::m_message_mutex;
 std::atomic<uint64_t> m_sol_count{ 0ull };
 std::mutex MinerState::m_print_mutex;
@@ -160,7 +160,7 @@ auto MinerState::initState() -> void
       {
         m_cuda_devices.emplace_back( device["device"],
                                      (device.find( "intensity" ) != device.end()
-                                      ? device["intensity"]
+                                      ? device["intensity"].get<int32_t>()
                                       :  DEFAULT_INTENSITY) );
       }
     }

@@ -13,6 +13,7 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <cstring>
 #include "cuda_sha3.h"
 #include "cudasolver.h"
 

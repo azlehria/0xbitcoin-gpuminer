@@ -22,7 +22,7 @@
         "cpp/BigInt/BigUnsigned.cc",
         "cpp/BigInt/BigUnsignedInABase.cc"
       ],
-      'cflags_cc!': ['-std=gnu++0x'],
+      'cflags_cc!': ['-std=gnu++0x', '-fno-exceptions'],
       'cflags_cc+': [ '-march=native', '-O3', '-std=c++14', '-Wall' ],
 
 # Comment next line for test builds
