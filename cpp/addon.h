@@ -47,6 +47,7 @@ namespace miner
   NAN_METHOD( run );
   NAN_METHOD( stop );
   NAN_METHOD( getTarget );
+  NAN_METHOD( getMaximumTarget );
   NAN_METHOD( getChallenge );
   NAN_METHOD( getPreviousChallenge );
   NAN_METHOD( getPoolAddress );

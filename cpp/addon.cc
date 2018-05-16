@@ -68,6 +68,11 @@ NAN_METHOD( miner::getTarget )
   info.GetReturnValue().Set( Nan::New<v8::String>( std::string( BigUnsignedInABase( MinerState::getTarget(), 10 ) ) ).ToLocalChecked() );
 }
 
+NAN_METHOD( miner::getMaximumTarget )
+{
+  info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getMaximumTarget() ).ToLocalChecked() );
+}
+
 NAN_METHOD( miner::getChallenge )
 {
   info.GetReturnValue().Set( Nan::New<v8::String>( MinerState::getChallenge() ).ToLocalChecked() );
@@ -208,6 +213,11 @@ NAN_MODULE_INIT( miner::Init )
   Set( target
        , New<v8::String>( "getTarget" ).ToLocalChecked()
        , New<v8::FunctionTemplate>( getTarget )->GetFunction()
+       );
+
+  Set( target
+       , New<v8::String>( "getMaximumTarget" ).ToLocalChecked()
+       , New<v8::FunctionTemplate>( getMaximumTarget )->GetFunction()
        );
 
   Set( target

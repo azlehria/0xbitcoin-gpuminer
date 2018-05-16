@@ -1,4 +1,6 @@
 #include <fstream>
+#include <algorithm>
+#include <cctype>
 #include <cuda_runtime.h>
 #include "miner_state.h"
 #include "addon.h"
@@ -11,6 +13,7 @@
 #  include <windows.h>
 #endif // _MSC_VER
 
+using namespace std::literals::string_literals;
 using namespace std::chrono;
 
 static char constexpr ascii[][3] = {
@@ -128,21 +131,25 @@ auto MinerState::initState() -> void
     std::exit( EXIT_FAILURE );
   }
 
-  MinerState::setAddress( m_json_config["address"] );
-  MinerState::setPoolUrl( m_json_config["pool"] );
+  setAddress( m_json_config["address"] );
+  setPoolUrl( m_json_config["pool"] );
 
-  if( m_json_config.find( "customdiff" ) != m_json_config.end() &&
-      m_json_config["customdiff"].get<double>() > 0u )
-  {
-    MinerState::setCustomDiff( m_json_config["customdiff"] );
-  }
-
+// this has to come before diff is set
   if( m_json_config.find( "token" ) != m_json_config.end() &&
       m_json_config["token"].get<std::string>().length() > 0u )
   {
-    MinerState::setTokenName( m_json_config["token"].get<std::string>() );
+    setTokenName( m_json_config["token"].get<std::string>() );
   }
-  m_maximum_target <<= 234;
+  else
+  {
+    setTokenName( "0xBitcoin"s );
+  }
+
+  if( m_json_config.find( "customdiff" ) != m_json_config.end() &&
+      m_json_config["customdiff"].get<uint64_t>() > 0u )
+  {
+    setCustomDiff( m_json_config["customdiff"].get<uint64_t>() );
+  }
 
   if( m_json_config.find( "submitstale" ) != m_json_config.end() &&
       m_json_config["submitstale"].is_boolean() )
@@ -311,7 +318,7 @@ auto MinerState::getLog() -> std::string const
   {
     guard lock(m_log_mutex);
 
-    if( m_log.size() == 0 ) return "";
+    if( m_log.size() == 0 ) return ""s;
 
     for( uint_fast8_t i{ 0 }; i < 5 && m_log.size() != 0; ++i )
     {
@@ -356,7 +363,7 @@ auto MinerState::hexToBytes( std::string const hex, T& bytes ) -> void
 {
   assert( hex.length() % 2 == 0 );
   // assert( bytes.size() == ( hex.length() / 2 - 1 ) );
-  if( hex.substr( 0, 2 ) == "0x" )
+  if( hex.substr( 0, 2 ) == "0x"s )
   {
     HexToBytes( hex.substr( 2 ), &bytes[0] );
   }
@@ -515,6 +522,11 @@ auto MinerState::getTargetNum() -> uint64_t const
   return m_target_num;
 }
 
+auto MinerState::getMaximumTarget() -> std::string const
+{
+  return "0x"s + std::string( BigUnsignedInABase( m_maximum_target, 16 ) );
+}
+
 auto MinerState::getMessage() -> message_t const
 {
   guard lock(m_message_mutex);
@@ -607,10 +619,8 @@ auto MinerState::setDiff( uint64_t const diff ) -> void
 {
   m_diff = diff;
   m_diff_ready = true;
-  BigUnsigned temp{ 1 };
-  temp <<= 234;
-  temp /= diff;
-  setTarget( std::string("0x") + std::string(BigUnsignedInABase( temp, 16 )) );
+  BigUnsigned temp{ m_maximum_target / diff };
+  setTarget( "0x"s + std::string(BigUnsignedInABase( temp, 16 )) );
 }
 
 auto MinerState::getDiff() -> uint64_t const
@@ -620,7 +630,7 @@ auto MinerState::getDiff() -> uint64_t const
 
 auto MinerState::setPoolUrl( std::string const pool ) -> void
 {
-  if( pool.find( "mine0xbtc.eu" ) != std::string::npos )
+  if( pool.find( "mine0xbtc.eu"s ) != std::string::npos )
   {
     std::cerr << "Selected pool '" << pool << "' is blocked for deceiving the community and apparent scamming.\n"
               << "Please select a different pool to mine on.\n";
@@ -651,6 +661,19 @@ auto MinerState::getCpuThreads() -> uint32_t const
 auto MinerState::setTokenName( std::string const token ) -> void
 {
   m_token_name = token;
+  std::string temp{ token };
+  std::transform( token.begin(),
+                  token.end(),
+                  temp.begin(),
+                  []( uint8_t c ) { return static_cast<char>(std::tolower(c)); } );
+  if( temp == "0xcate" || temp == "0xcatether" )
+  {
+    m_maximum_target <<= 224;
+  }
+  else
+  {
+    m_maximum_target <<= 234;
+  }
 }
 
 auto MinerState::getTokenName() -> std::string const

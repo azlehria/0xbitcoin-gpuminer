@@ -52,6 +52,7 @@ public:
   static auto setTarget( std::string const target ) -> void;
   static auto getTarget() -> BigUnsigned const;
   static auto getTargetNum() -> uint64_t const;
+  static auto getMaximumTarget() -> std::string const;
 
   static auto setPrefix( std::string const prefix ) -> void;
   static auto getPrefix() -> std::string const;
