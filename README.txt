@@ -1,8 +1,8 @@
-  This version is a bit of a departure, hence "gaiden". Configuration
-is entirely file-based, in `0xbitcoin.json', which _is_ read by a
-proper JSON interpreter, so formatting is
-important. https://jsonlint.com/ is quite useful for checking, if you
-have any difficulty.
+  Configuration is entirely file-based, in `0xbitcoin.json', which
+_is_ read by a proper JSON interpreter, so formatting is
+important. The included example file contains descriptions of the
+accepted options.  https://jshint.com/ is quite useful for checking,
+if you have any difficulty.
 
 	You will have to supply your own Ethereum address (mine is there as
 a placeholder - please don't actually mine to it!) and select a

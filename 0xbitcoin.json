@@ -1,8 +1,52 @@
 {
+  // "customdiff" completely overrides server diff - it will not even query
+  // the server for diff or target. This can easily result in no submissions
+  // _ever_ being valid!
+  // "customdiff" : 16384,
+
+  // "token" is a string indicating the ERC20 to mine for; this changes
+  // certain internal values in the miner. The string is case-insensitive
+  // and accepts both ticker symbols ("0xBTC") and names ("0xBitcoin").
+  // Currently valid tokens are 0xBitcoin and 0xCatether.
+  "token": "0xBTC",
+
+  // "debug" is currently unused - the purpose should be fairly obvious.
+  // "debug" : true,
+
+  // "submitstale" will cause stale solutions to be submitted anyway.
+  // Currently this is useless, as all existing pools treat them as invalid.
+  // "submitstale" : true,
+
+  // "address" is your Ethereum (wallet) address.
   "address" : "0x525F94485486B506FE2dB50e815d4eb95FB54Cef",
+
+  // "pool" is the URL and port of the mining pool that you wish to use.
+  // Currently only HTTP is supported on either end, no other protocol
+  // including HTTPS. The most common, and default, server port is 8586.
   "pool" : "http://0xminingpool.com:8586",
+
+  // "threads" is the number of CPU threads to use for _CPU mining_.
+  // Take care, as there is no throttling, CPU/core affinity, or priority
+  // setting at the moment - setting this to the number of cores will
+  // _significantly_ impact both usability and GPU mining!
+  "threads" : 0,
+
+  // "cuda" is an array of JSON objects configuring individual Nvidia GPUs
+  // in the following format:
+  // {
+  // "device"    - the device number in CUDA ordering, which begins at 0 with
+  //               the "best" device, determined via first Compute version,
+  //               _then_ by model; e.g. a system containing a GTX 1030 and a
+  //               GTX 980 Ti will set the GTX 1030 as device 0!
+  // "enabled"   - enables (true) or disables (false) the CUDA device
+  // "intensity" - decimal number indicating the number of threads to run on
+  //               the CUDA device; maximum value 41.99. This is not a direct
+  //               thread count, of course - you can't run a partial thread.
+  // }
   "cuda" : [
+    // intensity 29 is common for a GTX 1080 or 1080 Ti
     { "device": 0, "enabled": true, "intensity": 29 },
+    // intensity 23 is a safe, if slow, for almost any GPU
     { "device": 1, "enabled": true, "intensity": 23 },
     { "device": 2, "enabled": true, "intensity": 23 }
   ]

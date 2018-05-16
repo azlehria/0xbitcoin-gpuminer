@@ -24,8 +24,9 @@
       'cflags_cc!': ['-std=gnu++0x', '-fno-exceptions'],
       'cflags_cc+': [ '-march=native', '-O3', '-std=c++14', '-Wall' ],
 
+      'defines': ['JSON_STRIP_COMMENTS'],
 # Comment next line for test builds
-      'defines': [ 'NDEBUG'],
+      'defines+': ['NDEBUG'],
 
       "include_dirs": ["<!(node -e \"require('nan')\")"],
 
