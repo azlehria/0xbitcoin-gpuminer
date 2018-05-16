@@ -73,6 +73,7 @@ std::atomic<uint64_t> MinerState::m_hash_count_printable{ 0ull };
 message_t MinerState::m_message;
 hash_t MinerState::m_challenge_old;
 std::mutex MinerState::m_message_mutex;
+std::atomic<bool> MinerState::m_message_ready{ false };
 std::atomic<uint64_t> m_sol_count{ 0ull };
 std::mutex MinerState::m_print_mutex;
 std::queue<std::string> MinerState::m_log;
@@ -85,6 +86,7 @@ BigUnsigned MinerState::m_maximum_target{ 1ul };
 std::mutex MinerState::m_target_mutex;
 std::atomic<bool> MinerState::m_custom_diff{ false };
 std::atomic<uint64_t> MinerState::m_diff{ 1ull };
+std::atomic<bool> MinerState::m_diff_ready{ false };
 std::atomic<uint64_t> MinerState::m_sol_count{ 0ull };
 std::atomic<bool> MinerState::m_new_solution{ false };
 std::string MinerState::m_address;
@@ -421,6 +423,7 @@ auto MinerState::setPrefix( std::string const prefix ) -> void
 
   if( temp == m_message ) return;
 
+  m_message_ready = true;
   {
     guard lock(m_message_mutex);
     std::memcpy( m_challenge_old.data(), m_message.data(), 32 );
@@ -592,11 +595,7 @@ auto MinerState::getAddress() -> std::string const
 auto MinerState::setCustomDiff( uint64_t const diff ) -> void
 {
   m_custom_diff = true;
-  m_diff = diff;
-  BigUnsigned temp{ 1 };
-  temp <<= 234;
-  temp /= diff;
-  setTarget( std::string("0x") + std::string(BigUnsignedInABase( temp, 16 )) );
+  setDiff( diff );
 }
 
 auto MinerState::getCustomDiff() -> bool const
@@ -607,6 +606,7 @@ auto MinerState::getCustomDiff() -> bool const
 auto MinerState::setDiff( uint64_t const diff ) -> void
 {
   m_diff = diff;
+  m_diff_ready = true;
   BigUnsigned temp{ 1 };
   temp <<= 234;
   temp /= diff;
@@ -643,7 +643,7 @@ auto MinerState::getCudaDevices() -> std::vector<std::pair<int32_t, double>> con
   return m_cuda_devices;
 }
 
-auto MinerState::getCpuThreads() -> uint64_t const
+auto MinerState::getCpuThreads() -> uint32_t const
 {
   return m_cpu_threads;
 }
@@ -666,6 +666,11 @@ auto MinerState::setSubmitStale( bool const submitStale ) -> void
 auto MinerState::getSubmitStale() -> bool const
 {
   return m_submit_stale;
+}
+
+auto MinerState::isReady() -> bool const
+{
+  return m_diff_ready && m_message_ready;
 }
 
 auto MinerState::keccak256( std::string const message ) -> std::string const

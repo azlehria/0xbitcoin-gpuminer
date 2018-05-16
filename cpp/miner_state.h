@@ -73,13 +73,15 @@ public:
   static auto getPoolUrl() -> std::string const;
 
   static auto getCudaDevices() -> std::vector<std::pair<int32_t, double>> const;
-  static auto getCpuThreads() -> uint64_t const;
+  static auto getCpuThreads() -> uint32_t const;
 
   static auto setTokenName( std::string const token ) -> void;
   static auto getTokenName() -> std::string const;
 
   static auto setSubmitStale( bool const submitStale ) -> void;
   static auto getSubmitStale() -> bool const;
+
+  static auto isReady() -> bool const;
 
   static auto keccak256( std::string const message ) -> std::string const;
 
@@ -95,6 +97,7 @@ private:
   static message_t m_message;
   static hash_t m_challenge_old;
   static std::mutex m_message_mutex;
+  static std::atomic<bool> m_message_ready;
 
   static std::atomic<uint64_t> m_target_num;
   static BigUnsigned m_target;
@@ -102,6 +105,7 @@ private:
   static std::mutex m_target_mutex;
   static std::atomic<bool> m_custom_diff;
   static std::atomic<uint64_t> m_diff;
+  static std::atomic<bool> m_diff_ready;
 
   static hash_t m_solution;
 

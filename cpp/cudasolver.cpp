@@ -87,7 +87,7 @@ auto CUDASolver::getMidstate() const -> state_t const
   return MinerState::getMidstate();
 }
 
-auto CUDASolver::pushSolution() -> void
+auto CUDASolver::pushSolution() const -> void
 {
   for( uint_fast32_t i{ 0 }; i < *h_solution_count; ++i )
     MinerState::pushSolution( h_solutions[i] );

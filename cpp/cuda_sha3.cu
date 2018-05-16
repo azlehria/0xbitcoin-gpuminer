@@ -14,8 +14,13 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
 #include <sstream>
 #include <iomanip>
 #include <cstring>
-#include "cuda_sha3.h"
 #include "cudasolver.h"
+
+#ifdef __INTELLISENSE__
+ /* reduce vstudio warnings (__byteperm, blockIdx...) */
+#  include <device_functions.h>
+#  include <device_launch_parameters.h>
+#endif //__INTELLISENSE__
 
 #define cudaSafeCall(err) __cudaSafeCall(err, __FILE__, __LINE__, m_device)
 
@@ -46,6 +51,18 @@ __device__ __constant__ uint64_t const RC[24] = {
   0x000000000000800a, 0x800000008000000a, 0x8000000080008081,
   0x8000000000008080, 0x0000000080000001, 0x8000000080008008
 };
+
+__device__ __forceinline__
+auto ROTL64( uint64_t x, uint32_t y ) -> uint64_t const
+{
+  return (x << y) ^ (x >> (64 - y));
+}
+
+__device__ __forceinline__
+auto ROTR64( uint64_t x, uint32_t y ) -> uint64_t const
+{
+  return (x >> y) ^ (x << (64 - y));
+}
 
 __device__ __forceinline__
 auto bswap_64( uint64_t const input ) -> uint64_t const
@@ -119,7 +136,7 @@ auto chi( uint64_t const a, uint64_t const b, uint64_t const c ) -> uint64_t con
 #endif
 }
 
-KERNEL_LAUNCH_PARAMS
+__global__
 void cuda_mine( uint64_t* __restrict__ solution, uint32_t* __restrict__ solution_count, uint64_t const threads )
 {
   uint64_t const nounce{ threads + (blockDim.x * blockIdx.x + threadIdx.x) };

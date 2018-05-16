@@ -9,6 +9,7 @@
 #include "cpusolver.h"
 #include "cudasolver.h"
 #include "miner_state.h"
+#include "basesolver.h"
 
 #include <memory>
 #include <chrono>
@@ -37,8 +38,11 @@ private:
 
   auto printUiBase() const -> void;
 
-  std::vector<std::unique_ptr<CPUSolver>> cpuSolvers;
-  std::vector<std::unique_ptr<CUDASolver>> cudaSolvers;
+  std::vector<std::unique_ptr<IBaseSolver>> m_solvers;
+
+  uint_fast16_t m_solvers_cuda;
+  uint_fast16_t m_solvers_cpu;
+  // uint_fast16_t m_solvers_cl;
 
   std::string m_hardwareType;
 

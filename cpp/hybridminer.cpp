@@ -1,9 +1,11 @@
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include "addon.h"
 #include "hybridminer.h"
 #include "json.hpp"
 
+using namespace std::literals::string_literals;
 using namespace std::chrono;
 
 void ExitHandler()
@@ -37,6 +39,8 @@ void SignalHandler( int signal )
 #endif // _MSC_VER
 
 HybridMiner::HybridMiner() noexcept :
+m_solvers_cuda( 0u ),
+m_solvers_cpu( 0u ),
 m_old_ui( []() -> bool
           {
 #ifdef _MSC_VER
@@ -58,14 +62,15 @@ m_old_ui( []() -> bool
             }
 #endif // _MSC_VER
             return false;
-          }() )
+          }() ),
+m_stop( false )
 {
   MinerState::initState();
 
   std::atexit( ExitHandler );
 
 #ifdef _MSC_VER
-  SetConsoleTitleA( (std::string("0xBitcoin Miner v") + std::string(MINER_VERSION)).c_str() );
+  SetConsoleTitleA( ("0xBitcoin Miner v"s + std::string(MINER_VERSION)).c_str() );
   SetConsoleCtrlHandler( SignalHandler, TRUE );
 #else
   struct sigaction sig_handler;
@@ -93,7 +98,7 @@ HybridMiner::~HybridMiner()
 
 auto HybridMiner::updateTarget() const -> void
 {
-  for( auto&& solver : cudaSolvers )
+  for( auto&& solver : m_solvers )
   {
     solver->updateTarget();
   }
@@ -101,7 +106,7 @@ auto HybridMiner::updateTarget() const -> void
 
 auto HybridMiner::updateMessage() const -> void
 {
-  for( auto&& solver : cudaSolvers )
+  for( auto&& solver : m_solvers )
   {
     solver->updateMessage();
   }
@@ -122,7 +127,7 @@ auto HybridMiner::run() -> void
     std::this_thread::sleep_until( timerNext );
   } while( !m_stop );
 
-  std::cerr << MinerState::getPrintableTimeStamp() << "Process exiting... stopping miner\n";
+  std::cerr << MinerState::getPrintableTimeStamp() << "Process exiting... stopping miner\n"s;
   if( !m_old_ui )
   {
     std::cerr << "\x1b[s\x1b[?25h\x1b[r\x1b[u";
@@ -131,14 +136,19 @@ auto HybridMiner::run() -> void
 
 auto HybridMiner::startMining() -> void
 {
+  while( !MinerState::isReady() )
+  {
+    std::this_thread::sleep_for( 100ms );
+  }
   for( auto& device : MinerState::getCudaDevices() )
   {
-    cudaSolvers.push_back( std::make_unique<CUDASolver>( device.first,
+    m_solvers.push_back( std::make_unique<CUDASolver>( device.first,
                                                          device.second ) );
+    ++m_solvers_cuda;
   }
-  for( uint_fast64_t i{ 0 }; i < MinerState::getCpuThreads(); ++i )
+  for( m_solvers_cpu = 0; m_solvers_cpu < MinerState::getCpuThreads(); ++m_solvers_cpu )
   {
-    cpuSolvers.push_back( std::make_unique<CPUSolver>() );
+    m_solvers.push_back( std::make_unique<CPUSolver>() );
   }
 }
 
@@ -146,18 +156,15 @@ auto HybridMiner::stop() -> void
 {
   m_stop = true;
 
-  cudaSolvers.clear();
-  cpuSolvers.clear();
+  m_solvers.clear();
+
+  m_solvers_cuda = m_solvers_cpu = 0u;
 }
 
 auto HybridMiner::getHashrates() const -> double const
 {
   double temp{ 0 };
-  for( auto&& solver : cpuSolvers )
-  {
-    temp += solver->getHashrate();
-  }
-  for( auto&& solver : cudaSolvers )
+  for( auto&& solver : m_solvers )
   {
     temp += solver->getHashrate();
   }
@@ -186,8 +193,23 @@ auto HybridMiner::printUiBase() const -> void
               << "\x1b[5r\x1b[5;1f\x1b[?25h";
   }
 
-  std::cout << MinerState::getPrintableTimeStamp()
-            << "Mining on " << cudaSolvers.size()
-            << " GPU" << (cudaSolvers.size() > 1 ? "s" : "") << " using CUDA.\n"
-            << (m_old_ui ? '\n' : '\r');
+  std::stringstream ss_out;
+  ss_out << "Mining on "s;
+  if( m_solvers_cuda > 0u )
+  {
+    ss_out << m_solvers_cuda
+           << " GPU"s << (m_solvers_cuda > 1 ? "s"s : ""s) << " using CUDA"s;
+  }
+  if( m_solvers_cuda > 0u && m_solvers_cpu > 0u )
+  {
+    ss_out << " and "s;
+  }
+  if( m_solvers_cpu > 0u )
+  {
+    ss_out << m_solvers_cpu << " CPU core"s << (m_solvers_cpu > 1 ? "s"s : ""s);
+  }
+
+  ss_out << '.' << (m_old_ui ? '\n' : '\r');
+
+  MinerState::pushLog( ss_out.str() );
 }

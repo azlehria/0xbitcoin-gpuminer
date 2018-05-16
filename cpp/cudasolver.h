@@ -7,23 +7,27 @@
 #include <chrono>
 #include <string>
 #include "types.h"
+#include "basesolver.h"
 
-class CUDASolver
+class CUDASolver : public IBaseSolver
 {
 public:
   CUDASolver() = delete;
   CUDASolver( int32_t const device, double const intensity ) noexcept;
   ~CUDASolver();
 
-  auto findSolution() -> void;
-  auto stopFinding() -> void;
+  auto findSolution() -> void final;
+  auto stopFinding() -> void final;
 
-  auto getHashrate() const -> double const;
+  auto getHashrate() const -> double const final;
 
-  auto updateTarget() -> void;
-  auto updateMessage() -> void;
+  auto updateTarget() -> void final;
+  auto updateMessage() -> void final;
 
 private:
+  static uint32_t constexpr TPB35{  384u };
+  static uint32_t constexpr TPB50{ 1024u };
+
   auto updateGPULoop() -> void;
 
   auto pushTarget() -> void;
@@ -37,7 +41,7 @@ private:
   auto getNextSearchSpace() -> uint64_t const;
   auto getTarget() const -> uint64_t const;
   auto getMidstate() const -> state_t const;
-  auto pushSolution() -> void;
+  auto pushSolution() const -> void;
 
   std::thread m_run_thread;
 
