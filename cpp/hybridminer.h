@@ -6,48 +6,19 @@
 #ifndef  _HYBRIDMINER_H_
 #define  _HYBRIDMINER_H_
 
-#include "cpusolver.h"
-#include "cudasolver.h"
-#include "miner_state.h"
-#include "basesolver.h"
+#include <vector>
 
-#include <memory>
-#include <chrono>
-#include <random>
-#include <thread>
-#include <string>
+char constexpr MINER_VERSION[] = "1.0.0";
 
-char constexpr MINER_VERSION[] = "2.10.4";
-
-class HybridMiner
+namespace HybridMiner
 {
-public:
-  HybridMiner() noexcept;
-  ~HybridMiner();
-
-  auto updateTarget() const -> void;
-  auto updateMessage() const -> void;
+  auto updateTarget() -> void;
+  auto updateMessage() -> void;
 
   auto run() -> void;
   auto stop() -> void;
 
-  auto getHashrates() const -> double const;
-
-private:
-  auto startMining() -> void;
-
-  auto printUiBase() const -> void;
-
-  std::vector<std::unique_ptr<IBaseSolver>> m_solvers;
-
-  uint_fast16_t m_solvers_cuda;
-  uint_fast16_t m_solvers_cpu;
-  // uint_fast16_t m_solvers_cl;
-
-  std::string m_hardwareType;
-
-  std::atomic<bool> m_old_ui;
-  std::atomic<bool> m_stop;
+  auto getHashrates() -> std::vector<double> const;
 };
 
 #endif // ! _CPUMINER_H_

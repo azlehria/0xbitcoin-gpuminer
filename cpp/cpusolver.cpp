@@ -1,3 +1,5 @@
+#include <cstring>
+#include <cmath>
 #include <chrono>
 #include "cpusolver.h"
 
@@ -42,7 +44,7 @@ CPUSolver::~CPUSolver()
   stopFinding();
   while( !m_stopped || !m_run_thread.joinable() )
   {
-    std::this_thread::sleep_for( std::chrono::milliseconds( 50u ) );
+    std::this_thread::sleep_for( 1ms );
   }
   m_run_thread.join();
 }
@@ -78,7 +80,6 @@ auto CPUSolver::findSolution() -> void
     sph_keccak256( &m_ctx, in_buffer.data(), in_buffer.size() );
     sph_keccak256_close( &m_ctx, out_buffer.data() );
 
-    // printf("%" PRIx64 "\n%" PRIx64 "\n", bswap64( digest.data() ), reinterpret_cast<uint64_t&>(digest[0]));
     if( bswap64( reinterpret_cast<uint64_t&>(out_buffer[0]) ) < MinerState::getTargetNum() )
     {
       MinerState::pushSolution( solution );

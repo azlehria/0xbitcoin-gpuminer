@@ -7,9 +7,9 @@
 #include "miner_state.h"
 #include "types.h"
 #include "sph_keccak.h"
-#include "basesolver.h"
+#include "isolver.h"
 
-class CPUSolver : public IBaseSolver
+class CPUSolver : public ISolver
 {
 public:
   CPUSolver() noexcept;

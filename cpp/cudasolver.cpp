@@ -7,6 +7,7 @@
 using namespace std::chrono;
 
 CUDASolver::CUDASolver( int32_t const device, double const intensity ) noexcept :
+m_start( steady_clock::now() ),
 m_stop( false ),
 m_stopped( false ),
 m_new_target( true ),
@@ -16,12 +17,10 @@ m_hash_count_samples( 0u ),
 m_hash_average( 0 ),
 m_intensity( intensity <= 41.99 ? intensity : 41.99 ),
 m_threads( static_cast<uint64_t>(std::pow( 2, intensity <= 41.99 ? intensity : 41.99 )) ),
-m_device_failure_count( 0u ),
 m_gpu_initialized( false ),
 m_device( device ),
 m_grid( 1u ),
-m_block( 1u ),
-m_start( steady_clock::now() )
+m_block( 1u )
 {
   m_run_thread = std::thread( &CUDASolver::findSolution, this );
 }
@@ -31,10 +30,10 @@ CUDASolver::~CUDASolver()
   stopFinding();
   while( !m_stopped || !m_run_thread.joinable() )
   {
-    std::this_thread::sleep_for( std::chrono::milliseconds( 50u ) );
+    std::this_thread::sleep_for( 1ms );
   }
-  m_run_thread.join();
   cudaCleanup();
+  m_run_thread.join();
 }
 
 auto CUDASolver::getHashrate() const -> double const
@@ -87,7 +86,7 @@ auto CUDASolver::getMidstate() const -> state_t const
   return MinerState::getMidstate();
 }
 
-auto CUDASolver::pushSolution() const -> void
+auto CUDASolver::pushSolutions() const -> void
 {
   for( uint_fast32_t i{ 0 }; i < *h_solution_count; ++i )
     MinerState::pushSolution( h_solutions[i] );

@@ -20,6 +20,8 @@ based off of https://github.com/Dunhili/SHA3-gpu-brute-force-cracker/blob/master
  /* reduce vstudio warnings (__byteperm, blockIdx...) */
 #  include <device_functions.h>
 #  include <device_launch_parameters.h>
+#  include <cuda_runtime.h>
+#  include <cuda.h>
 #endif //__INTELLISENSE__
 
 #define cudaSafeCall(err) __cudaSafeCall(err, __FILE__, __LINE__, m_device)
@@ -321,8 +323,14 @@ auto CUDASolver::cudaInit() -> void
 
   int32_t compute_version{ device_prop.major * 100 + device_prop.minor * 10 };
 
+  if( compute_version <= 500 )
+  {
+    m_intensity = m_intensity <= 40.55 ? m_intensity : 40.55;
+    m_threads = static_cast<uint64_t>( std::pow( 2, m_intensity <= 40.55 ? m_intensity : 40.55 ) );
+  }
+
   m_block.x = compute_version > 500 ? TPB50 : TPB35;
-  m_grid.x = (m_threads + m_block.x - 1) / m_block.x;
+  m_grid.x = uint32_t((m_threads + m_block.x - 1) / m_block.x);
 
   if( !m_gpu_initialized )
   {
@@ -372,6 +380,8 @@ auto CUDASolver::pushTarget() -> void
 
   uint64_t target{ getTarget() };
   cudaSafeCall( cudaMemcpyToSymbol( d_target, &target, 8, 0, cudaMemcpyHostToDevice) );
+
+  m_new_target = false;
 }
 
 auto CUDASolver::pushMessage() -> void
@@ -379,6 +389,8 @@ auto CUDASolver::pushMessage() -> void
   cudaSetDevice( m_device );
 
   cudaSafeCall( cudaMemcpyToSymbol( d_mid, getMidstate().data(), 200, 0, cudaMemcpyHostToDevice) );
+
+  m_new_message = false;
 }
 
 auto CUDASolver::findSolution() -> void
@@ -401,30 +413,9 @@ auto CUDASolver::findSolution() -> void
                 << cudaerr
                 << ": \x1b[38;5;196m"
                 << cudaGetErrorString( cudaerr )
-                << ".\x1b[0m\n";
-
-      ++m_device_failure_count;
-
-      if( m_device_failure_count >= 3 )
-      {
-        std::cerr << "Kernel launch has failed "
-                  << m_device_failure_count
-                  << " times. Try reducing your overclocks.\n";
-        exit( EXIT_FAILURE );
-      }
-
-      --m_intensity;
-      m_threads = static_cast<uint64_t>(std::pow( 2, m_intensity ));
-      std::stringstream ss_out;
-      ss_out << "Reducing intensity to "
-             << std::setprecision( 2 ) << m_intensity
-             << " and restarting.\n";
-      std::cerr << ss_out.str();
-      cudaCleanup();
-      cudaInit();
-      m_new_target = true;
-      m_new_message = true;
-      continue;
+                << ".\x1b[0m\n"
+                << "Check your hardware configuration.\n";
+      exit( EXIT_FAILURE );
     }
 
     cudaSafeCall( cudaMemcpy( h_solution_count, d_solution_count, 4, cudaMemcpyDeviceToHost ) );
@@ -432,7 +423,7 @@ auto CUDASolver::findSolution() -> void
     if( *h_solution_count )
     {
       cudaSafeCall( cudaMemcpy( h_solutions, d_solutions, (*h_solution_count)*8, cudaMemcpyDeviceToHost ) );
-      pushSolution();
+      pushSolutions();
       cudaResetSolution();
     }
   } while( !m_stop );

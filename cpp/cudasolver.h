@@ -3,13 +3,15 @@
 
 #include <vector_types.h>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
 #include <atomic>
 #include <chrono>
 #include <string>
 #include "types.h"
-#include "basesolver.h"
+#include "isolver.h"
 
-class CUDASolver : public IBaseSolver
+class CUDASolver : public ISolver
 {
 public:
   CUDASolver() = delete;
@@ -25,10 +27,11 @@ public:
   auto updateMessage() -> void final;
 
 private:
+  CUDASolver( CUDASolver const& ) = delete;
+  CUDASolver& operator=( CUDASolver const& ) = delete;
+
   static uint32_t constexpr TPB35{  384u };
   static uint32_t constexpr TPB50{ 1024u };
-
-  auto updateGPULoop() -> void;
 
   auto pushTarget() -> void;
   auto pushMessage() -> void;
@@ -41,7 +44,9 @@ private:
   auto getNextSearchSpace() -> uint64_t const;
   auto getTarget() const -> uint64_t const;
   auto getMidstate() const -> state_t const;
-  auto pushSolution() const -> void;
+  auto pushSolutions() const -> void;
+
+  std::chrono::steady_clock::time_point m_start;
 
   std::thread m_run_thread;
 
@@ -57,7 +62,6 @@ private:
   double m_intensity;
   uint64_t m_threads;
 
-  uint_fast8_t m_device_failure_count;
   bool m_gpu_initialized;
   int32_t m_device;
   uint32_t* h_solution_count;
@@ -67,8 +71,6 @@ private:
 
   dim3 m_grid;
   dim3 m_block;
-
-  std::chrono::steady_clock::time_point m_start;
 };
 
 #endif // !_CUDASOLVER_H_
